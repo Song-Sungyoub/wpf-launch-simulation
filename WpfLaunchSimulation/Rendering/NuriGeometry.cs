@@ -212,24 +212,88 @@ public sealed class NuriModel
     }
 }
 
-// Naro launch complex 2 in local metres: +Y up, +X east, -Z north. Tower height 45~48 m (sources differ); green,
-// with four arms. Pad deck, flame duct and service buildings are simplified.
+// Naro launch complex 2 in local metres: +Y up, +X east, +Z south. From public photos: a green lattice umbilical
+// tower (45~48 m, sources differ) with four service arms beside a raised launch deck. Truss layout, lightning masts,
+// flame-trench direction and service buildings are illustrative, not drawings.
 public static class PadModel
 {
     public static Model3DGroup Create()
     {
         var group = new Model3DGroup();
-        var concrete = NuriModel.Lit(Color.FromRgb(150, 150, 146));
-        var green = NuriModel.Lit(Color.FromRgb(48, 120, 70));
-        var steel = NuriModel.Lit(Color.FromRgb(110, 114, 120));
-        group.Children.Add(NuriModel.Box(0, -0.5, 0, 90, 1, 90, concrete));
-        group.Children.Add(NuriModel.Box(0, 0.6, 0, 12, 1.2, 12, steel));      // launch table
-        group.Children.Add(NuriModel.Box(0, -0.2, 26, 8, 0.6, 40, NuriModel.Lit(Color.FromRgb(70, 66, 60)))); // flame duct exit (direction illustrative)
-        group.Children.Add(NuriModel.Box(9.5, 24, 0, 4.5, 48, 4.5, green));     // umbilical tower
-        foreach (double y in new[] { 12.0, 24.0, 34.0, 41.0 })
-            group.Children.Add(NuriModel.Box(5.6, y, 0, 3.6, 0.8, 1.2, green)); // arms
-        group.Children.Add(NuriModel.Box(-40, 4, 30, 18, 8, 12, NuriModel.Lit(Color.FromRgb(200, 200, 196)))); // service building
+        var concrete = NuriModel.Lit(Color.FromRgb(168, 168, 162));
+        var darkConcrete = NuriModel.Lit(Color.FromRgb(118, 116, 110));
+        var scorched = NuriModel.Lit(Color.FromRgb(58, 54, 50));
+        var green = NuriModel.Lit(Color.FromRgb(46, 118, 68));
+        var steel = NuriModel.Lit(Color.FromRgb(120, 124, 130));
+        var white = NuriModel.Lit(Color.FromRgb(226, 226, 222));
+        var red = NuriModel.Lit(Color.FromRgb(190, 60, 52));
+
+        // Apron, raised deck and launch table (rocket base at y = 0).
+        group.Children.Add(NuriModel.Box(0, -1.4, 0, 170, 0.8, 150, concrete));
+        group.Children.Add(NuriModel.Box(0, -0.6, 0, 30, 1.2, 30, darkConcrete));
+        group.Children.Add(NuriModel.Box(0, -0.15, 0, 9, 0.3, 9, steel));
+        foreach (var (x, z) in new[] { (2.6, 2.6), (-2.6, 2.6), (2.6, -2.6), (-2.6, -2.6) })
+            group.Children.Add(NuriModel.Box(x, 0.6, z, 0.7, 1.5, 0.7, steel));                // hold-down posts
+        // Flame trench: opening under the vehicle and a covered channel to a deflector exit on the south side.
+        group.Children.Add(NuriModel.Box(0, -0.25, 0, 4.2, 0.12, 4.2, scorched));
+        group.Children.Add(NuriModel.Box(0, -1.0, 26, 9, 0.2, 32, scorched));
+        foreach (double x in new[] { -5.0, 5.0 }) group.Children.Add(NuriModel.Box(x, -0.4, 26, 1.2, 2.2, 32, darkConcrete));
+        group.Children.Add(NuriModel.Box(0, 0.6, 12, 11, 0.6, 6, darkConcrete));
+        group.Children.Add(NuriModel.Box(0, 1.0, 43, 12, 3.5, 1.5, darkConcrete));          // deflector wall
+
+        // Umbilical tower: four legs, horizontals every 3 m and X-bracing on each face.
+        const double tx = 9.0, half = 2.4, height = 48;
+        var legs = new[] { (tx - half, -half), (tx + half, -half), (tx + half, half), (tx - half, half) };
+        foreach (var (x, z) in legs) group.Children.Add(Beam(new(x, -1, z), new(x, height, z), 0.45, green));
+        for (double y = 2; y <= height; y += 3)
+            for (int k = 0; k < 4; k++)
+            {
+                var (x0, z0) = legs[k]; var (x1, z1) = legs[(k + 1) % 4];
+                group.Children.Add(Beam(new(x0, y, z0), new(x1, y, z1), 0.22, green));
+                if (y + 3 <= height)
+                {
+                    group.Children.Add(Beam(new(x0, y, z0), new(x1, y + 3, z1), 0.14, green));
+                    group.Children.Add(Beam(new(x1, y, z1), new(x0, y + 3, z0), 0.14, green));
+                }
+            }
+        group.Children.Add(NuriModel.Box(tx, height + 0.3, 0, 5.6, 0.6, 5.6, green));
+        group.Children.Add(Beam(new(tx, height, 0), new(tx, height + 9, 0), 0.18, steel));        // lightning rod
+        // Service arms: truss from the tower face to the vehicle, with an umbilical plate.
+        foreach (var (y, reach) in new[] { (12.0, NuriModel.Stage1Radius), (24.5, NuriModel.UpperRadius), (34.0, NuriModel.UpperRadius), (41.0, NuriModel.UpperRadius) })
+        {
+            double x0 = tx - half, x1 = reach + 0.35;
+            foreach (double dz in new[] { -0.6, 0.6 })
+            {
+                group.Children.Add(Beam(new(x0, y, dz), new(x1, y, dz), 0.16, green));
+                group.Children.Add(Beam(new(x0, y + 1.2, dz), new(x1, y + 0.6, dz), 0.12, green));
+            }
+            for (double x = x1; x < x0; x += 1.4) group.Children.Add(Beam(new(x, y, -0.6), new(x, y, 0.6), 0.1, green));
+            group.Children.Add(NuriModel.Box(x1 - 0.12, y + 0.3, 0, 0.25, 1.0, 1.0, steel));
+        }
+        // Lightning masts around the pad (white/red banded).
+        foreach (var (x, z) in new[] { (-34.0, -30.0), (34.0, -30.0), (-34.0, 34.0) })
+            for (int k = 0; k < 6; k++)
+                group.Children.Add(Beam(new(x, -1 + k * 11, z), new(x, -1 + (k + 1) * 11, z), 0.7 - k * 0.07, k % 2 == 0 ? red : white));
+        // Water tank and service buildings.
+        group.Children.Add(NuriModel.Cylinder(-1, 14, 5, 5, white, -55, -40, 32));
+        group.Children.Add(NuriModel.Cylinder(14, 15.5, 5, 0.8, white, -55, -40, 32));
+        group.Children.Add(NuriModel.Box(-52, 3.5, 32, 22, 9, 14, white));
+        group.Children.Add(NuriModel.Box(-52, 8.3, 32, 22.4, 0.6, 14.4, steel));
+        group.Children.Add(NuriModel.Box(48, 2.5, 28, 14, 7, 10, white));
+        group.Children.Add(NuriModel.Box(40, 0, -55, 10, 2.5, 6, steel));
         group.Freeze();
         return group;
+    }
+
+    // Square-section beam between two points.
+    private static GeometryModel3D Beam(Point3D a, Point3D b, double thickness, Material material)
+    {
+        var axis = b - a; double length = axis.Length; axis.Normalize();
+        var side = Vector3D.CrossProduct(axis, Math.Abs(axis.Y) < 0.9 ? new Vector3D(0, 1, 0) : new Vector3D(1, 0, 0)); side.Normalize();
+        var up = Vector3D.CrossProduct(side, axis);
+        var box = NuriModel.Box(0, 0.5, 0, thickness, 1, thickness, material);
+        var m = new Matrix3D(side.X, side.Y, side.Z, 0, axis.X * length, axis.Y * length, axis.Z * length, 0, up.X, up.Y, up.Z, 0, a.X, a.Y, a.Z, 1);
+        box.Transform = new MatrixTransform3D(m);
+        return box;
     }
 }
