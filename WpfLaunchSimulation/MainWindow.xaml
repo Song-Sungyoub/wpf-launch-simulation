@@ -148,6 +148,29 @@
                         <TextBlock Text="3인칭: 드래그로 회전, 휠로 거리 조절" FontSize="10" Foreground="#899BB5"/>
                     </StackPanel>
                 </Border>
+                <Border Style="{StaticResource Panel}" Margin="0,0,0,10" Visibility="{Binding ManeuverVisibility}">
+                    <StackPanel>
+                        <TextBlock Text="정밀 조정 · 위성 분사 (교육용 예시)" Foreground="#FFD35A" FontWeight="SemiBold"/>
+                        <TextBlock Text="{Binding ManeuverStatus}" FontSize="11" Foreground="#B7CCE5" TextWrapping="Wrap" Margin="0,4,0,8" LineHeight="17"/>
+                        <Button Content="자동: 다음 원지점에서 원궤도화" Command="{Binding AutoCircularizeCommand}" Background="#163F4A" BorderBrush="#65DEE0"
+                                ToolTip="원지점에서 진행 방향으로 분사해 속도를 그 고도의 원궤도 속도까지 올리면, 근지점이 올라가 원궤도가 됩니다."/>
+                        <TextBlock Style="{StaticResource Label}"><Run Text="실습 · "/><Run Text="{Binding BurnStepText, Mode=OneWay}"/></TextBlock>
+                        <WrapPanel>
+                            <Button Content="1" Command="{Binding BurnStepCommand}" CommandParameter="1" Padding="9,4"/>
+                            <Button Content="5" Command="{Binding BurnStepCommand}" CommandParameter="5" Padding="9,4"/>
+                            <Button Content="10" Command="{Binding BurnStepCommand}" CommandParameter="10" Padding="9,4"/>
+                        </WrapPanel>
+                        <WrapPanel>
+                            <Button Content="진행 +" Command="{Binding BurnCommand}" CommandParameter="prograde" ToolTip="속도 증가 → 반대편(180°) 고도가 올라감"/>
+                            <Button Content="역진행 −" Command="{Binding BurnCommand}" CommandParameter="retrograde" ToolTip="속도 감소 → 반대편 고도가 내려감"/>
+                            <Button Content="법선 +" Command="{Binding BurnCommand}" CommandParameter="normal" ToolTip="궤도면을 기울임 → 경사각 변화 (비용이 큼)"/>
+                            <Button Content="법선 −" Command="{Binding BurnCommand}" CommandParameter="antinormal" ToolTip="궤도면을 반대로 기울임"/>
+                            <Button Content="바깥 ↑" Command="{Binding BurnCommand}" CommandParameter="radialout" ToolTip="지구 반대 방향 → 원지점·근지점 위치가 돌아감"/>
+                            <Button Content="안쪽 ↓" Command="{Binding BurnCommand}" CommandParameter="radialin" ToolTip="지구 방향"/>
+                        </WrapPanel>
+                        <TextBlock Text="회색 선: 분사 전 궤도 · 하늘색 선: 현재 궤도. Δv 예산 30 m/s는 예시값입니다." FontSize="10" Foreground="#899BB5" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
                 <Border Style="{StaticResource Panel}" Margin="0,0,0,10">
                     <StackPanel>
                         <TextBlock Text="비행 기록" Style="{StaticResource Label}" Margin="0,0,0,4"/>

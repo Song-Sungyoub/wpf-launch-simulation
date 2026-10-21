@@ -93,6 +93,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SpeedCommand = new ActionCommand(p => { if (double.TryParse(p as string, out var v)) { speed = v; Notify(nameof(SpeedText)); } });
         CameraCommand = new ActionCommand(p => { if (Enum.TryParse<CameraMode>(p as string, out var m)) { cameraMode = m; Notify(nameof(CameraText)); } });
         sim.EventRaised += OnFlightEvent;
+        InitializeManeuvers();
         Update(0);
     }
     private readonly Model3DGroup nearDebris;
@@ -112,6 +113,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         missionTime = CountdownStart; playing = false; speed = 1;
         rocket.Root.Children.Clear();
         foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
+        pendingBurn = null; deltaVUsed = 0; previousOrbitPoints = []; previousOrbit.Geometry = null;
         nearDebris.Children.Clear(); debrisModels.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
         flightPath.Geometry = null; orbitPath.Geometry = null; groundTrack.Geometry = null;
@@ -126,7 +128,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         double dt = double.IsNaN(lastWall) ? 0 : Math.Clamp(wallSeconds - lastWall, 0, 0.1);
         lastWall = wallSeconds;
-        if (playing && missionTime < NuriFlight2.FlightEnd + 600) missionTime += dt * speed;
+        if (playing && missionTime < NuriFlight2.FlightEnd + 3 * 3600) missionTime += dt * speed;
+        if (pendingBurn is double burnAt && missionTime >= burnAt) ExecuteAutoBurn();
         if (missionTime > 0) sim.Advance(missionTime);
         Update(wallSeconds);
     }
@@ -176,6 +179,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     private Vec rocketBase, rocketAxis;
     private Vec RocketCenter => rocketBase + rocketAxis * (sim.Stage == 1 ? 22 : sim.Stage == 2 ? 34 : 42);
+    // After separation the camera, telemetry and orbit read-out follow the performance verification satellite.
+    private Debris? Satellite => sim.Satellite;
+    private Vec FocusCenter => Satellite is { } sat ? sat.Position + rocketAxis * (NuriModel.Stage3Top + 0.9) : RocketCenter;
+    private Vec FocusPosition => Satellite?.Position ?? sim.Position;
+    private Vec FocusVelocity => Satellite?.Velocity ?? sim.Velocity;
     private void SetPart(Model3D part, bool visible)
     {
         bool present = rocket.Root.Children.Contains(part);
@@ -290,8 +298,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var mode = Director(t);
         if (mode != activeMode) { activeMode = mode; Notify(nameof(CameraText)); Notify(nameof(IsControlRoom)); Notify(nameof(ControlRoomVisibility)); }
         var view = mode == CameraMode.ControlRoom ? CameraMode.Chase : mode;
-        var center = SceneGeometry.Point(RocketCenter);
-        var up = SceneGeometry.Direction(RocketCenter);
+        var center = SceneGeometry.Point(FocusCenter);
+        var up = SceneGeometry.Direction(FocusCenter);
         Point3D origin = center, eye; Vector3D look; double fov = 45, nearMeters;
         switch (view)
         {
@@ -327,10 +335,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             default:
             {
                 // 3rd-person: behind and above the rocket, user-adjustable with drag/wheel.
-                var axis = SceneGeometry.Direction(rocketAxis);
+                var axis = SceneGeometry.Direction(Satellite is null ? rocketAxis : FocusVelocity);
                 var behind = t > 0 ? -axis : -up;
                 var side = Vector3D.CrossProduct(behind, up); if (side.LengthSquared < 1e-8) side = new Vector3D(1, 0, 0); side.Normalize();
-                double dist = (sim.Stage == 3 ? chaseDistance * 1.6 : chaseDistance) / R;
+                double dist = (Satellite is not null ? chaseDistance * 0.12 : sim.Stage == 3 ? chaseDistance * 1.6 : chaseDistance) / R;
                 var offset = behind * Math.Cos(orbitYaw) + side * Math.Sin(orbitYaw);
                 offset = offset * Math.Cos(orbitPitch) + up * Math.Sin(orbitPitch); offset.Normalize();
                 if (t <= 0) offset = side * Math.Cos(orbitYaw) + up * 0.15 + (Vector3D)SceneGeometry.Direction(Vec.Cross(new Vec(0, 0, 1), rocketBase)) * Math.Sin(orbitYaw);
@@ -359,7 +367,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             lastRibbon = wall; ribbonWidth = width;
             if (pathPoints.Count > 1) flightPath.Geometry = SceneGeometry.Ribbon(pathPoints, width);
             if (trackPoints.Count > 1) groundTrack.Geometry = SceneGeometry.Ribbon(trackPoints, width);
-            if (sim.Phase == FlightPhase.Orbit) orbitPath.Geometry = SceneGeometry.Ribbon(PredictOrbit(), width * 0.8);
+            if (sim.Phase == FlightPhase.Orbit) orbitPath.Geometry = SceneGeometry.Ribbon(OrbitMath.Revolution(FocusPosition, FocusVelocity).Select(SceneGeometry.Point).ToList(), width * 0.8);
+            if (previousOrbitPoints.Count > 1) previousOrbit.Geometry = SceneGeometry.Ribbon(previousOrbitPoints, width * 0.6);
         }
         UpdateSky(eye);
         foreach (var p in new[] { nameof(CameraPosition), nameof(LookDirection), nameof(UpDirection), nameof(FieldOfView), nameof(FarNearPlane), nameof(FarFarPlane), nameof(NearNearPlane), nameof(NearFarPlane) }) Notify(p);
@@ -379,17 +388,81 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Notify(nameof(SkyBrush)); Notify(nameof(StarOpacity));
     }
 
-    private List<Point3D> PredictOrbit()
+    // ---- Fine adjustment (satellite manoeuvres) ------------------------------------------------------------
+    // Illustrative exercise: impulsive burns on the separated satellite. The Δv budget is an example value,
+    // not a published specification of the performance verification satellite.
+    public const double DeltaVBudget = 30;
+    private readonly GeometryModel3D previousOrbit = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 130, 150)) };
+    private List<Point3D> previousOrbitPoints = [];
+    private double deltaVUsed, burnStep = 5;
+    private double? pendingBurn;
+    public Visibility ManeuverVisibility => Satellite is null ? Visibility.Collapsed : Visibility.Visible;
+    public string ManeuverStatus { get; private set; } = "";
+    public string BurnStepText => $"분사량 {burnStep:0} m/s";
+    public ICommand BurnCommand { get; private set; } = null!;
+    public ICommand BurnStepCommand { get; private set; } = null!;
+    public ICommand AutoCircularizeCommand { get; private set; } = null!;
+
+    private void InitializeManeuvers()
     {
-        var points = new List<Point3D>(); var r = sim.Position; var v = sim.Velocity;
-        double period = sim.Orbit.PeriodMin * 60; if (!double.IsFinite(period)) return points;
-        double dt = period / 240;
-        for (int i = 0; i <= 240; i++)
+        previousOrbit.BackMaterial = previousOrbit.Material; farInertial.Children.Add(previousOrbit);
+        BurnStepCommand = new ActionCommand(p => { if (double.TryParse(p as string, out var v)) { burnStep = v; Notify(nameof(BurnStepText)); } });
+        BurnCommand = new ActionCommand(p => { if (Satellite is { } sat && p is string direction) Burn(sat, direction, burnStep); });
+        AutoCircularizeCommand = new ActionCommand(() =>
         {
-            points.Add(SceneGeometry.Point(r));
-            for (int k = 0; k < 10; k++) { double rl = r.Length; v += r * (-Earth.Mu / (rl * rl * rl)) * (dt / 10); r += v * (dt / 10); }
-        }
-        return points;
+            if (Satellite is not { } sat) return;
+            var el = OrbitMath.Elements(sat.Position, sat.Velocity);
+            pendingBurn = missionTime + el.TimeToApoapsis;
+            AddLog(Clock(missionTime), $"자동 조정 예약 · 다음 원지점(T+{Clock(pendingBurn.Value)[2..]})에서 원궤도화 분사");
+        });
+    }
+
+    private Vec Direction(Debris sat, string direction)
+    {
+        var prograde = sat.Velocity.Unit; var normal = Vec.Cross(sat.Position, sat.Velocity).Unit; var radial = sat.Position.Unit;
+        return direction switch
+        {
+            "prograde" => prograde, "retrograde" => -prograde, "normal" => normal, "antinormal" => -normal,
+            "radialout" => radial, "radialin" => -radial, _ => Vec.Zero
+        };
+    }
+    private static string DirectionName(string direction) => direction switch
+    {
+        "prograde" => "진행 방향", "retrograde" => "역진행 방향", "normal" => "궤도면 법선(+)", "antinormal" => "궤도면 법선(−)",
+        "radialout" => "지구 반대쪽", "radialin" => "지구 쪽", _ => direction
+    };
+
+    private void Burn(Debris sat, string direction, double deltaV)
+    {
+        if (deltaVUsed + deltaV > DeltaVBudget + 1e-9) { AddLog(Clock(missionTime), $"분사 불가 · 남은 Δv {DeltaVBudget - deltaVUsed:0.0} m/s"); return; }
+        var before = OrbitMath.Elements(sat.Position, sat.Velocity);
+        previousOrbitPoints = OrbitMath.Revolution(sat.Position, sat.Velocity).Select(SceneGeometry.Point).ToList();
+        sat.ApplyDeltaV(Direction(sat, direction) * deltaV); deltaVUsed += deltaV;
+        var after = OrbitMath.Elements(sat.Position, sat.Velocity);
+        AddLog(Clock(missionTime), $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {before.PerigeeKm:N1}→{after.PerigeeKm:N1} km, 원지점 {before.ApogeeKm:N1}→{after.ApogeeKm:N1} km, 경사각 {before.InclinationDeg:0.000}→{after.InclinationDeg:0.000}°");
+        LatestEvent = $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {after.PerigeeKm:N0} km / 원지점 {after.ApogeeKm:N0} km"; Notify(nameof(LatestEvent));
+        lastRibbon = double.NegativeInfinity;
+    }
+
+    private void ExecuteAutoBurn()
+    {
+        pendingBurn = null;
+        if (Satellite is not { } sat) return;
+        // At apoapsis the velocity is horizontal; raise it to circular speed at this radius.
+        double needed = Math.Sqrt(Earth.Mu / sat.Position.Length) - sat.Velocity.Length;
+        if (needed <= 0.05) { AddLog(Clock(missionTime), "자동 조정 · 이미 원궤도에 가까워 분사 생략"); return; }
+        Burn(sat, "prograde", Math.Min(needed, DeltaVBudget - deltaVUsed));
+    }
+
+    private void UpdateManeuverStatus()
+    {
+        Notify(nameof(ManeuverVisibility));
+        if (Satellite is not { } sat) return;
+        var el = OrbitMath.Elements(sat.Position, sat.Velocity);
+        ManeuverStatus = $"성능검증위성 궤도 · 근지점 {el.PerigeeKm:N1} km · 원지점 {el.ApogeeKm:N1} km · 이심률 {el.Eccentricity:0.0000}\n"
+            + $"경사각 {el.InclinationDeg:0.000}° · 주기 {el.PeriodSeconds / 60:0.0}분 · 다음 원지점까지 {el.TimeToApoapsis / 60:0.0}분\n"
+            + $"사용 Δv {deltaVUsed:0.0} / {DeltaVBudget:0} m/s" + (pendingBurn is double p ? $" · 자동 분사 {Math.Max(p - missionTime, 0) / 60:0.0}분 후" : "");
+        Notify(nameof(ManeuverStatus));
     }
 
     // ---- Telemetry ----------------------------------------------------------------------------------------
@@ -425,18 +498,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (Math.Abs(t - lastTelemetry) < 0.1 && t > 0) return;
         lastTelemetry = t;
         bool flying = t > 0;
-        StageText = !flying ? (t > -4 ? "점화 · 추력 상승" : "발사 대기") : sim.Phase switch
+        StageText = Satellite is not null ? "성능검증위성 · 궤도 비행 (정밀 조정 가능)" : !flying ? (t > -4 ? "점화 · 추력 상승" : "발사 대기") : sim.Phase switch
         {
             FlightPhase.Stage1 => "1단 연소", FlightPhase.Stage1Coast => "1·2단 분리 후 관성 비행", FlightPhase.Stage2 => "2단 연소",
             FlightPhase.Stage2Coast => "2·3단 분리 후 관성 비행", FlightPhase.Stage3 => "3단 연소", _ => "궤도 비행"
         };
-        AltitudeText = flying ? $"{sim.Altitude / 1000:0.0} km" : "0.0 km";
-        SpeedTextValue = flying ? $"{sim.Velocity.Length / 1000:0.000} km/s (대지 {sim.RelativeVelocity.Length / 1000:0.000}) · M{sim.Mach:0.0}" : "0.000 km/s";
+        AltitudeText = flying ? $"{(FocusPosition.Length - Earth.Radius) / 1000:0.0} km" : "0.0 km";
+        SpeedTextValue = flying ? $"{FocusVelocity.Length / 1000:0.000} km/s (대지 {sim.RelativeVelocity.Length / 1000:0.000}) · M{sim.Mach:0.0}" : "0.000 km/s";
         AccelerationText = flying ? $"{sim.SensedAccelerationG:0.00} G (최대 {sim.MaxAccelerationG:0.00})" : "1.00 G";
         PressureText = flying ? $"{sim.DynamicPressure / 1000:0.0} kPa" : "0.0 kPa";
         DownrangeText = flying ? $"{sim.Downrange / 1000:N0} km · 비행경로각 {sim.FlightPathAngleDeg:0.0}°" : "0 km";
         PropellantText = sim.Phase == FlightPhase.Orbit ? "-" : $"{sim.CurrentStage.Name} {sim.PropellantFraction * 100:0}%";
-        var orbit = sim.Orbit;
+        var focusOrbit = OrbitMath.Elements(FocusPosition, FocusVelocity);
+        var orbit = (focusOrbit.PerigeeKm, focusOrbit.ApogeeKm, focusOrbit.InclinationDeg);
+        UpdateManeuverStatus();
         OrbitText = flying && sim.Altitude > 100e3
             ? (double.IsFinite(orbit.PerigeeKm) ? $"근지점 {orbit.PerigeeKm:N0} km · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°" : "탈출 궤도")
             : "목표: 700 km 태양동기궤도 · 경사각 98.2°";

@@ -4,7 +4,7 @@
 
 .NET 9 / Windows WPF Viewport3D simulation of Korea's **Nuri (KSLV-II) flight 2** (2022-06-21 16:00 KST, Naro Space Center): countdown, liftoff, Max-Q, stage and fairing separations, orbit insertion and satellite separation, rebuilt from public sources for education. No game engine, HelixToolkit or custom shaders.
 
-> Status: early scaffold. The flight model, countdown, telemetry, camera direction and control-room view work end to end; visuals and the post-insertion "fine adjustment" exercise are still to come.
+> Status: early version. Flight model, countdown, telemetry, camera direction, control room and the post-insertion fine-adjustment exercise work end to end; launch visuals and pad terrain are still being improved.
 
 ## What it shows
 
@@ -13,6 +13,7 @@
 - **Separated hardware** (stages, fairing halves) falls ballistically; splashdown distances are logged next to the planned values.
 - **Telemetry**: mission clock, altitude, inertial/ground speed, Mach, sensed acceleration, dynamic pressure, downrange, flight-path angle, propellant, live perigee/apogee/inclination.
 - **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view.
+- **Fine adjustment (education)**: after separation the camera and telemetry follow the performance verification satellite. "Auto" schedules a circularisation burn at the next apoapsis; the practice buttons apply prograde/retrograde, normal/antinormal and radial burns (1/5/10 m/s) and show the orbit before (grey) and after (cyan). The 30 m/s Δv budget is an example value, not a satellite specification.
 - **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
 
 ## Accuracy

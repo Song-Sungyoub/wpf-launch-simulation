@@ -13,6 +13,7 @@ public sealed class Debris(string name, double mass, double area, Vec position, 
     public bool Landed { get; private set; }
     public double LandedTime { get; private set; } = double.NaN;
     public double Tumble { get; private set; }
+    public void ApplyDeltaV(Vec deltaV) => Velocity += deltaV;
     public void Step(double t, double dt)
     {
         if (Landed) return;
@@ -55,6 +56,7 @@ public sealed class AscentSimulator
     public bool EngineBurning => Thrust > 0;
     public List<FlightEvent> Events { get; } = [];
     public List<Debris> Debris { get; } = [];
+    public Debris? Satellite => Debris.FirstOrDefault(d => d.Kind == 4);
     public event Action<FlightEvent>? EventRaised;
 
     public double Altitude => Position.Length - Earth.Radius;
