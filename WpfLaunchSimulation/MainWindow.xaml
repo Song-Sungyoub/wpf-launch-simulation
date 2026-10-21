@@ -68,7 +68,7 @@
                 </Border>
                 <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="120" FontWeight="Bold" Foreground="#CCFFD35A"
                            HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
-                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18" IsHitTestVisible="False" Padding="14,6">
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
                     <TextBlock Text="{Binding LatestEvent}" FontSize="16" Foreground="#FFD35A"/>
                 </Border>
 

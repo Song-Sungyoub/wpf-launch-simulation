@@ -39,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly GeometryModel3D groundTrack = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 255, 150)) };
     private readonly ScaleTransform3D markerScale = new(); private readonly TranslateTransform3D markerPosition = new();
     private readonly NuriModel rocket = new();
+    private readonly LaunchSmoke smoke = new();
     private readonly MatrixTransform3D rocketPose = new();
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
     private readonly HashSet<Debris> reportedLandings = [];
@@ -82,7 +83,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         FarScene.Children.Add(farRoot);
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
         var pad = new Model3DGroup { Transform = new MatrixTransform3D(LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM))) };
-        pad.Children.Add(PadModel.Create());
+        pad.Children.Add(PadModel.Create()); pad.Children.Add(smoke.Root);
         var nearEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) };
         nearEarthFixed.Children.Add(pad);
         rocket.Root.Transform = rocketPose;
@@ -122,6 +123,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
         flightPath.Geometry = null; orbitPath.Geometry = null; groundTrack.Geometry = null;
         AltitudeChart = []; SpeedChart = []; MapTrack = []; Log.Clear(); countdownLogged.Clear();
+        LatestEvent = ""; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
         Notify(nameof(PlayText)); Notify(nameof(SpeedText)); Notify(nameof(AltitudeChart)); Notify(nameof(SpeedChart)); Notify(nameof(MapTrack));
         Update(0);
     }
@@ -146,6 +148,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (t >= time && countdownLogged.Add(time)) AddLog(Clock(time), text);
         earthAngle.Angle = Earth.OmegaRadPerSecond * t * 180 / Math.PI;
         UpdateRocket(t);
+        smoke.Update(t);
         UpdateDebris();
         if (t > 0 && t - lastSample >= 2) SampleTrack(t);
         UpdateCamera(t, wall);
@@ -365,7 +368,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NearNearPlane = nearMeters / R; NearFarPlane = 3000e3 / R;
         // Ribbon and marker sizes follow the camera distance.
         double viewDist = ((Vector3D)(eye - center)).Length;
-        markerScale.ScaleX = markerScale.ScaleY = markerScale.ScaleZ = Math.Max(viewDist * 0.006, 2e-7);
+        // The position marker is for distant views only; up close the model itself is visible.
+        markerScale.ScaleX = markerScale.ScaleY = markerScale.ScaleZ = viewDist * R > 30e3 ? viewDist * 0.006 : 0;
         markerPosition.OffsetX = center.X; markerPosition.OffsetY = center.Y; markerPosition.OffsetZ = center.Z;
         double width = Math.Clamp(viewDist * 0.0012, 3 / R, 0.004);
         if (wall - lastRibbon > 0.5 || Math.Abs(width - ribbonWidth) > ribbonWidth * 0.5)
@@ -446,7 +450,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         sat.ApplyDeltaV(Direction(sat, direction) * deltaV); deltaVUsed += deltaV;
         var after = OrbitMath.Elements(sat.Position, sat.Velocity);
         AddLog(Clock(missionTime), $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {before.PerigeeKm:N1}→{after.PerigeeKm:N1} km, 원지점 {before.ApogeeKm:N1}→{after.ApogeeKm:N1} km, 경사각 {before.InclinationDeg:0.000}→{after.InclinationDeg:0.000}°");
-        LatestEvent = $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {after.PerigeeKm:N0} km / 원지점 {after.ApogeeKm:N0} km"; Notify(nameof(LatestEvent));
+        LatestEvent = $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {after.PerigeeKm:N0} km / 원지점 {after.ApogeeKm:N0} km"; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
         lastRibbon = double.NegativeInfinity;
     }
 
@@ -483,6 +487,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PropellantText { get; private set; } = "";
     public string OrbitText { get; private set; } = "";
     public string LatestEvent { get; private set; } = "";
+    public Visibility LatestEventVisibility => string.IsNullOrEmpty(LatestEvent) ? Visibility.Collapsed : Visibility.Visible;
     public string StationText { get; private set; } = "";
     public Point RocketMapPoint { get; private set; }
     public ObservableCollection<string> Log { get; } = [];
@@ -536,7 +541,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var reference = NuriFlight2.Reference.FirstOrDefault(r => e.Name.StartsWith(r.Event));
         string compare = reference.Event is null ? "" : $" (실제 {reference.Time:0} s / {reference.AltitudeKm:0} km)";
         AddLog(Clock(e.Time), $"{e.Name} · {e.AltitudeKm:0.0} km, {e.SpeedKms:0.00} km/s{compare}");
-        LatestEvent = e.Name; Notify(nameof(LatestEvent));
+        LatestEvent = e.Name; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
     }
 
     private void AddLog(string clock, string text) => Log.Insert(0, $"{clock}  {text}");

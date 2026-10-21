@@ -186,7 +186,7 @@ public static class PadModel
         var steel = NuriModel.Lit(Color.FromRgb(110, 114, 120));
         group.Children.Add(NuriModel.Box(0, -0.5, 0, 90, 1, 90, concrete));
         group.Children.Add(NuriModel.Box(0, 0.6, 0, 12, 1.2, 12, steel));      // launch table
-        group.Children.Add(NuriModel.Box(0, -0.2, -26, 8, 0.6, 40, NuriModel.Lit(Color.FromRgb(70, 66, 60)))); // flame duct exit
+        group.Children.Add(NuriModel.Box(0, -0.2, 26, 8, 0.6, 40, NuriModel.Lit(Color.FromRgb(70, 66, 60)))); // flame duct exit (direction illustrative)
         group.Children.Add(NuriModel.Box(9.5, 24, 0, 4.5, 48, 4.5, green));     // umbilical tower
         foreach (double y in new[] { 12.0, 24.0, 34.0, 41.0 })
             group.Children.Add(NuriModel.Box(5.6, y, 0, 3.6, 0.8, 1.2, green)); // arms
