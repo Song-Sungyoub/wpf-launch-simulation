@@ -55,7 +55,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var sun = SunDirection();
         foreach (var scene in new[] { FarScene, NearScene })
         {
-            scene.Children.Add(new AmbientLight(Color.FromRgb(46, 50, 60)));
+            // The vehicle gets more ambient light (sky/Earth fill) so its shadowed side keeps some detail.
+            scene.Children.Add(new AmbientLight(scene == NearScene ? Color.FromRgb(92, 96, 106) : Color.FromRgb(46, 50, 60)));
             scene.Children.Add(new DirectionalLight(Color.FromRgb(255, 250, 240), -sun));
         }
         // Far layer.
@@ -64,7 +65,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var earthMaterial = new DiffuseMaterial(new ImageBrush(earthImage)); earthMaterial.Freeze();
         farEarthFixed.Transform = new RotateTransform3D(earthAngle);
         farEarthFixed.Children.Add(SceneGeometry.Sphere(1, earthMaterial, 160, 80));
-        farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, earthMaterial));
+        // The patch only covers a small UV range; brushes map UVs relative to the mesh's own UV bounds by default,
+        // which would stretch the whole world map over it. Use absolute 0..1 texture space instead.
+        var patchMaterial = new DiffuseMaterial(new ImageBrush(earthImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
+        farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial));
         farEarthFixed.Children.Add(SceneGeometry.Clouds());
         groundTrack.BackMaterial = groundTrack.Material; groundTrackHost.Children.Add(groundTrack);
         farEarthFixed.Children.Add(groundTrackHost); farEarthFixed.Children.Add(landingHost);
@@ -172,7 +176,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             SetPart(rocket.PlumeModels[i], i == burning);
             if (i != burning) continue;
-            double h = t > 0 ? sim.Altitude : 0, expand = 1 + Math.Min(h / 40e3, 2.5);
+            double h = t > 0 ? sim.Altitude : 0, expand = 1 + Math.Min(h / 60e3, 1.2);
             double length = i switch { 0 => t <= 0 ? 6 + (t + 4) * 4 : 22 + h / 2500, 1 => 26, _ => 12 } * (0.92 + 0.08 * Math.Sin(t * 37));
             rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = expand; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
         }
@@ -354,8 +358,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         UpDirection = view == CameraMode.Globe ? new Vector3D(0, 1, 0) : up;
         FieldOfView = fov;
         double eyeAltitude = Math.Max(((Vector3D)eye).Length * R - R, 1);
-        FarNearPlane = Math.Max(Math.Min(eyeAltitude * 0.5, ((Vector3D)(eye - center)).Length * R * 0.05), Math.Max(nearMeters, 2)) / R;
-        FarFarPlane = ((Vector3D)eye).Length + 4;
+        // The far layer's nearest geometry is the ground, so its near plane follows the camera altitude; a metre-scale
+        // near plane against a far plane beyond the globe leaves no depth precision and the far side shows through.
+        FarNearPlane = Math.Max(eyeAltitude * 0.3, Math.Max(nearMeters, 2)) / R;
+        FarFarPlane = ((Vector3D)eye).Length + 1.3;
         NearNearPlane = nearMeters / R; NearFarPlane = 3000e3 / R;
         // Ribbon and marker sizes follow the camera distance.
         double viewDist = ((Vector3D)(eye - center)).Length;

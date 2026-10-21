@@ -55,13 +55,13 @@ public sealed class NuriModel
         {
             var glow = new MaterialGroup();
             glow.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
-            glow.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(200, 255, 190, 90))));
+            glow.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(130, 255, 190, 90))));
             glow.Freeze();
             var core = Cylinder(0, -1, plumeRadius[i], plumeRadius[i] * 0.25, glow);
             core.BackMaterial = glow;
             var hot = new MaterialGroup();
             hot.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
-            hot.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(235, 255, 245, 210))));
+            hot.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(200, 255, 245, 210))));
             hot.Freeze();
             var inner = Cylinder(0, -0.35, plumeRadius[i] * 0.55, plumeRadius[i] * 0.1, hot);
             PlumeModels[i].Children.Add(inner); PlumeModels[i].Children.Add(core);
