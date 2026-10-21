@@ -41,6 +41,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly NuriModel rocket = new();
     private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
+    private readonly EarthEffects.LimbGlow limbGlow = new();
     private Matrix3D padFrame;
     // Smoke billboards need the camera in pad-local metres: invert pad frame → Earth rotation → moving origin.
     private void UpdateSmoke(double t)
@@ -91,6 +92,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var patchMaterial = new DiffuseMaterial(new ImageBrush(areaImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
         farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
             (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9)));
+        farEarthFixed.Children.Add(EarthEffects.NightLights(new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/earth-night.jpg"), Earth.FixedPosition(23.44, 74.6, 0).Unit));
         farEarthFixed.Children.Add(SceneGeometry.Clouds());
         groundTrack.BackMaterial = groundTrack.Material; groundTrackHost.Children.Add(groundTrack);
         farEarthFixed.Children.Add(groundTrackHost); farEarthFixed.Children.Add(landingHost);
@@ -100,7 +102,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var markerTransform = new Transform3DGroup(); markerTransform.Children.Add(markerScale); markerTransform.Children.Add(markerPosition);
         marker.Transform = markerTransform; farInertial.Children.Add(marker);
         var farRoot = new Model3DGroup { Transform = farOrigin };
-        farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farInertial);
+        farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farInertial); farRoot.Children.Add(limbGlow.Model);
         FarScene.Children.Add(farRoot);
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
         padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
@@ -419,18 +421,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var p in new[] { nameof(CameraPosition), nameof(LookDirection), nameof(UpDirection), nameof(FieldOfView), nameof(FarNearPlane), nameof(FarFarPlane), nameof(NearNearPlane), nameof(NearFarPlane) }) Notify(p);
     }
 
-    // Daylight sky: blue near the ground when the Sun is up at the camera, fading to black space by ~80 km.
+    // Daylight sky by camera altitude (Rayleigh-blue near the ground, deep blue in the stratosphere, black above
+    // ~100 km), scaled by how high the Sun is at the camera. Illustrative colours.
     public Brush SkyBrush { get; private set; } = Brushes.Black;
     public double StarOpacity { get; private set; } = 1;
+    private static readonly (double AltitudeKm, Color Color)[] SkyStops =
+        [(0, Color.FromRgb(118, 174, 228)), (8, Color.FromRgb(78, 132, 212)), (20, Color.FromRgb(36, 66, 150)), (40, Color.FromRgb(14, 24, 70)), (70, Color.FromRgb(5, 8, 22)), (100, Color.FromRgb(3, 5, 12))];
     private void UpdateSky(Point3D eye)
     {
-        var up = (Vector3D)eye; double altitude = up.Length * R - R; up.Normalize();
-        double sunElevation = Vector3D.DotProduct(up, SunDirection());
-        double day = Math.Clamp((sunElevation + 0.05) / 0.25, 0, 1) * Math.Clamp(1 - altitude / 80e3, 0, 1);
-        byte Mix(byte a, byte b) => (byte)(a + (b - a) * day);
-        var brush = new SolidColorBrush(Color.FromRgb(Mix(5, 104), Mix(8, 162), Mix(15, 214))); brush.Freeze();
-        SkyBrush = brush; StarOpacity = 1 - day;
+        var up = (Vector3D)eye; double km = (up.Length * R - R) / 1000; up.Normalize();
+        double day = Math.Clamp((Vector3D.DotProduct(up, SunDirection()) + 0.05) / 0.25, 0, 1);
+        int k = 0; while (k < SkyStops.Length - 2 && km > SkyStops[k + 1].AltitudeKm) k++;
+        double f = Math.Clamp((km - SkyStops[k].AltitudeKm) / (SkyStops[k + 1].AltitudeKm - SkyStops[k].AltitudeKm), 0, 1);
+        Color a = SkyStops[k].Color, b = SkyStops[k + 1].Color, night = SkyStops[^1].Color;
+        byte Mix(byte x, byte y, byte n) => (byte)(n + ((x + (y - x) * f) - n) * day);
+        var brush = new SolidColorBrush(Color.FromRgb(Mix(a.R, b.R, night.R), Mix(a.G, b.G, night.G), Mix(a.B, b.B, night.B))); brush.Freeze();
+        SkyBrush = brush; StarOpacity = 1 - day * Math.Clamp(1 - km / 60, 0, 1);
         Notify(nameof(SkyBrush)); Notify(nameof(StarOpacity));
+        limbGlow.Update(eye);
     }
 
     // ---- Fine adjustment (satellite manoeuvres) ------------------------------------------------------------
