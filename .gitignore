@@ -1,0 +1,10 @@
+﻿**/bin/
+**/obj/
+**/artifacts/
+.vs/
+*.user
+Published/
+preview*.png
+
+# Local interactive preview builds
+Preview/

@@ -1,0 +1,46 @@
+# WPF Launch Simulation
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+.NET 9 / Windows WPF Viewport3D simulation of Korea's **Nuri (KSLV-II) flight 2** (2022-06-21 16:00 KST, Naro Space Center): countdown, liftoff, Max-Q, stage and fairing separations, orbit insertion and satellite separation, rebuilt from public sources for education. No game engine, HelixToolkit or custom shaders.
+
+> Status: early scaffold. The flight model, countdown, telemetry, camera direction and control-room view work end to end; visuals and the post-insertion "fine adjustment" exercise are still to come.
+
+## What it shows
+
+- **Countdown** from the automatic launch sequence (PLO, T−10 min) to ignition at T−4 s and liftoff.
+- **Ascent**: 3-DoF point-mass flight with Earth rotation, gravity, an exponential atmosphere, sea-level/vacuum thrust, staged masses and drag. Events are raised from the dynamics: sonic, Max-Q, stage separations, ignitions, fairing separation, 3rd-stage cutoff.
+- **Separated hardware** (stages, fairing halves) falls ballistically; splashdown distances are logged next to the planned values.
+- **Telemetry**: mission clock, altitude, inertial/ground speed, Mach, sensed acceleration, dynamic pressure, downrange, flight-path angle, propellant, live perigee/apogee/inclination.
+- **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view.
+- **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
+
+## Accuracy
+
+Reference values and their sources are in [docs/research-nuri-flight2.md](docs/research-nuri-flight2.md). Public: engine thrust, specific impulse, mass flow, burn times, liftoff mass, event times/altitudes, target orbit. **Approximated** (not public): stage dry masses, pitch programme and guidance, launch azimuth, tracking-station coordinates, fairing shape.
+
+| Event | Public (actual flight 2) | Simulation |
+|---|---|---|
+| Stage 1 separation | 123 s / 62 km | 123 s / 52.7 km |
+| Fairing separation | 227 s / 202 km | 227 s / 198.6 km |
+| Stage 2 separation | 269 s / 258~273 km | 270 s / 279.8 km |
+| Stage 3 cutoff | ≈790 s / 700 km | 791 s / 699 km |
+| Orbit | 700 km ±5 %, ≈98.2° SSO | 686 × 724 km, 98.24° |
+| Max acceleration | design limit 4.3 G | 4.25 G |
+| Max-Q | planned ≈64 s / 11 km | 63 s / 8.6 km |
+| Stage 1 / fairing / stage 2 splashdown | planned ≈413 / 1,514 / 2,800 km | 314 / 1,180 / 2,429 km |
+
+The first-stage trajectory is about 9 km lower than flown; making it steeper costs too much energy for the approximated masses, so drop distances are also short. Satellite separations use the published times (875 s, 945 s).
+
+`tools/ascent_prototype.py` is the Python prototype used to tune the approximated parameters; it implements the same model as `AscentSimulator`.
+
+## Build
+
+```powershell
+dotnet build WpfLaunchSimulation.sln -c Release
+dotnet run --project WpfLaunchSimulation -c Release
+```
+
+## License
+
+[MIT License](LICENSE) — keep the copyright notice (`Copyright (c) 2026 Song-Sungyoub`) and license text in copies or substantial portions. Earth imagery: NASA Blue Marble. Nuri flight data: public KARI releases and news reports (see the research document).
