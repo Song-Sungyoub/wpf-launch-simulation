@@ -39,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly GeometryModel3D groundTrack = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 255, 150)) };
     private readonly ScaleTransform3D markerScale = new(); private readonly TranslateTransform3D markerPosition = new();
     private readonly NuriModel rocket = new();
+    private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
     private readonly MatrixTransform3D rocketPose = new();
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
@@ -60,6 +61,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             scene.Children.Add(new AmbientLight(scene == NearScene ? Color.FromRgb(92, 96, 106) : Color.FromRgb(46, 50, 60)));
             scene.Children.Add(new DirectionalLight(Color.FromRgb(255, 250, 240), -sun));
         }
+        NearScene.Children.Add(fillLight); // soft light from the camera so the shadowed side keeps detail
         // Far layer.
         var earthImage = new BitmapImage();
         earthImage.BeginInit(); earthImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/earth.jpg"); earthImage.EndInit(); earthImage.Freeze();
@@ -371,7 +373,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // near plane against a far plane beyond the globe leaves no depth precision and the far side shows through.
         FarNearPlane = Math.Max(eyeAltitude * 0.3, Math.Max(nearMeters, 2)) / R;
         FarFarPlane = ((Vector3D)eye).Length + 1.3;
-        NearNearPlane = nearMeters / R; NearFarPlane = 3000e3 / R;
+        // Keep the near layer's depth range proportional to what it shows (vehicle, pad, nearby debris):
+        // a 1 m..3,000 km range leaves no depth precision and inner parts show through the fairing.
+        double focusMetres = ((Vector3D)(eye - center)).Length * R;
+        NearNearPlane = Math.Max(nearMeters, focusMetres * 0.01) / R;
+        NearFarPlane = Math.Max(focusMetres * 50, 20e3) / R;
+        fillLight.Direction = look;
         // Ribbon and marker sizes follow the camera distance.
         double viewDist = ((Vector3D)(eye - center)).Length;
         // The position marker is for distant views only; up close the model itself is visible.
@@ -381,7 +388,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (wall - lastRibbon > 0.5 || Math.Abs(width - ribbonWidth) > ribbonWidth * 0.5)
         {
             lastRibbon = wall; ribbonWidth = width;
-            if (pathPoints.Count > 1) flightPath.Geometry = SceneGeometry.Ribbon(pathPoints, width);
+            // The flight-path ribbon is for overview views; up close it would cut across the frame.
+            if (pathPoints.Count > 1) flightPath.Geometry = viewDist * R > 200e3 || view == CameraMode.Globe || mode == CameraMode.ControlRoom ? SceneGeometry.Ribbon(pathPoints, width) : null;
             if (trackPoints.Count > 1) groundTrack.Geometry = SceneGeometry.Ribbon(trackPoints, width);
             if (sim.Phase == FlightPhase.Orbit) orbitPath.Geometry = SceneGeometry.Ribbon(OrbitMath.Revolution(FocusPosition, FocusVelocity).Select(SceneGeometry.Point).ToList(), width * 0.8);
             if (previousOrbitPoints.Count > 1) previousOrbit.Geometry = SceneGeometry.Ribbon(previousOrbitPoints, width * 0.6);

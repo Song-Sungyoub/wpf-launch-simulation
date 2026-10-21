@@ -66,8 +66,8 @@
                 <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" Padding="10,5">
                     <TextBlock Text="{Binding CameraText}" FontSize="12" Foreground="#B7CCE5"/>
                 </Border>
-                <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="120" FontWeight="Bold" Foreground="#CCFFD35A"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="96" FontWeight="Bold" Foreground="#CCFFD35A"
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsHitTestVisible="False"/>
                 <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
                     <TextBlock Text="{Binding LatestEvent}" FontSize="16" Foreground="#FFD35A"/>
                 </Border>
