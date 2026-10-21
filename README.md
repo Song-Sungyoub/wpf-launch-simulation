@@ -14,6 +14,9 @@
 - **Telemetry**: mission clock, altitude, inertial/ground speed, Mach, sensed acceleration, dynamic pressure, downrange, flight-path angle, propellant, live perigee/apogee/inclination.
 - **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view.
 - **Fine adjustment (education)**: after separation the camera and telemetry follow the performance verification satellite. "Auto" schedules a circularisation burn at the next apoapsis; the practice buttons apply prograde/retrograde, normal/antinormal and radial burns (1/5/10 m/s) and show the orbit before (grey) and after (cyan). The 30 m/s Δv budget is an example value, not a satellite specification.
+- **Mission timeline**: a bar under the 3D view with buttons for liftoff, Max-Q, separations, orbit insertion and satellite separations; a jump re-runs the deterministic flight to that moment (backward jumps restart it).
+- **Explanation cards**: short Korean explanations of liftoff, sonic, Max-Q, staging, fairing, orbit insertion and the satellite/mass-simulator separations (can be turned off).
+- **Visuals**: Nuri model with flag and "대한민국" markings, seams, raceways and bell nozzles; detailed launch complex 2 (lattice tower, service arms, deck, flame trench, lightning masts; layout illustrative); soft billboard exhaust cloud; gradient plumes; altitude sky colours, night-side city lights and an atmosphere limb glow.
 - **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
 
 Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). The source mosaic has some swath-edge streaks over the sea, and terrain is flat (no elevation).
@@ -35,7 +38,7 @@ Reference values and their sources are in [docs/research-nuri-flight2.md](docs/r
 
 The first-stage trajectory is about 9 km lower than flown; making it steeper costs too much energy for the approximated masses, so drop distances are also short. Satellite separations use the published times (875 s, 945 s).
 
-`tools/ascent_prototype.py` is the Python prototype used to tune the approximated parameters; it implements the same model as `AscentSimulator`.
+`tools/ascent_prototype.py` is the Python prototype (same model as `AscentSimulator`, plus splashdown distances); `tools/tune_ascent.py` searches the approximated parameters. With the published liftoff mass and KARI mass flow no combination fits every public target at once; see section 7.1 of the research document.
 
 ## Build
 

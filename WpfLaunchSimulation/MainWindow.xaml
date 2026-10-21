@@ -68,8 +68,22 @@
                 </Border>
                 <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="96" FontWeight="Bold" Foreground="#CCFFD35A"
                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsHitTestVisible="False"/>
-                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,74" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
                     <TextBlock Text="{Binding LatestEvent}" FontSize="16" Foreground="#FFD35A"/>
+                </Border>
+
+                <!-- Explanation card -->
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,52,12,0" Width="340" IsHitTestVisible="False"
+                        Visibility="{Binding CardVisibility}" BorderBrush="#65DEE0" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="{Binding CardTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#FFD35A"/>
+                        <TextBlock Text="{Binding CardText}" FontSize="12" Foreground="#DCE6F2" TextWrapping="Wrap" LineHeight="19" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Border>
+                <!-- Mission timeline: click to jump -->
+                <Border VerticalAlignment="Bottom" Margin="14,0,14,12" Height="52" CornerRadius="8" Background="#CC0B1426">
+                    <Canvas x:Name="TimelineCanvas" Margin="12,0" ClipToBounds="False" Background="Transparent" Cursor="Hand"
+                            SizeChanged="OnTimelineSizeChanged" MouseLeftButtonDown="OnTimelineClick" ToolTip="클릭해서 해당 시점으로 이동"/>
                 </Border>
 
                 <!-- Control room: flight map, charts, stations, log; the lower-right cell keeps the tracking camera. -->
@@ -146,6 +160,7 @@
                             <Button Content="지구 전체" Command="{Binding CameraCommand}" CommandParameter="Globe"/>
                         </WrapPanel>
                         <TextBlock Text="3인칭: 드래그로 회전, 휠로 거리 조절" FontSize="10" Foreground="#899BB5"/>
+                        <CheckBox Content="설명 카드 표시" IsChecked="{Binding ShowCards}" Foreground="#E7EEF8" Margin="0,8,0,0"/>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource Panel}" Margin="0,0,0,10" Visibility="{Binding ManeuverVisibility}">

@@ -21,7 +21,7 @@ public sealed class ActionCommand(Action<object?> execute) : ICommand
     public void Execute(object? parameter) => execute(parameter);
 }
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed partial class MainViewModel : INotifyPropertyChanged
 {
     public const double CountdownStart = -600; // PLO starts at T−10 min (YTN 사이언스, 2022-06-21)
     private const double R = Earth.Radius;
@@ -150,7 +150,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         nearDebris.Children.Clear(); debrisModels.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
         flightPath.Geometry = null; orbitPath.Geometry = null; groundTrack.Geometry = null;
-        AltitudeChart = []; SpeedChart = []; MapTrack = []; Log.Clear(); countdownLogged.Clear();
+        AltitudeChart = []; SpeedChart = []; MapTrack = []; Log.Clear(); logTimes.Clear(); countdownLogged.Clear();
         LatestEvent = ""; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
         Notify(nameof(PlayText)); Notify(nameof(SpeedText)); Notify(nameof(AltitudeChart)); Notify(nameof(SpeedChart)); Notify(nameof(MapTrack));
         Update(0);
@@ -166,14 +166,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (pendingBurn is double burnAt && missionTime >= burnAt) ExecuteAutoBurn();
         if (missionTime > 0) sim.Advance(missionTime);
         Update(wallSeconds);
+        UpdateCard();
     }
 
     private readonly HashSet<double> countdownLogged = [];
+    private void LogCountdown(double t)
+    {
+        foreach (var (time, text) in new[] { (-600.0, "발사자동운용(PLO) 시작 · 추진제 충전과 기립장치 철수는 완료된 상태 · 이후 이상 감지 시 자동 중단"), (-4.0, "1단 엔진 4기 점화"), (0.0, "이륙 · 지상고정장치 해제") })
+            if (t >= time && countdownLogged.Add(time)) { AddLog(time, text); if (time == 0) ShowCardFor("이륙"); }
+    }
     private void Update(double wall)
     {
         double t = missionTime;
-        foreach (var (time, text) in new[] { (-600.0, "발사자동운용(PLO) 시작 · 추진제 충전과 기립장치 철수는 완료된 상태 · 이후 이상 감지 시 자동 중단"), (-4.0, "1단 엔진 4기 점화"), (0.0, "이륙 · 지상고정장치 해제") })
-            if (t >= time && countdownLogged.Add(time)) AddLog(Clock(time), text);
+        LogCountdown(t);
         earthAngle.Angle = Earth.OmegaRadPerSecond * t * 180 / Math.PI;
         UpdateRocket(t);
         UpdateDebris();
@@ -245,7 +250,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 double km = Earth.SurfaceDistance(sim.PadFixed, Earth.InertialToFixed(piece.Position, piece.LandedTime)) / 1000;
                 string plan = piece.Kind switch { 1 => "계획 약 413 km", 2 => "계획 약 2,800 km", _ => "계획 약 1,514 km" };
-                AddLog(Clock(piece.LandedTime), $"{piece.Name} 해상 낙하 · 발사장에서 {km:N0} km ({plan})");
+                AddLog(piece.LandedTime, $"{piece.Name} 해상 낙하 · 발사장에서 {km:N0} km ({plan})");
                 var fixedPoint = SceneGeometry.Point(Earth.InertialToFixed(piece.Position, piece.LandedTime).Unit * (R + 3000));
                 var dot = SceneGeometry.Sphere(0.0012, SceneGeometry.MarkerMaterial(Color.FromRgb(255, 120, 90)), 12, 6);
                 dot.Transform = new TranslateTransform3D((Vector3D)fixedPoint); landingHost.Children.Add(dot);
@@ -466,7 +471,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (Satellite is not { } sat) return;
             var el = OrbitMath.Elements(sat.Position, sat.Velocity);
             pendingBurn = missionTime + el.TimeToApoapsis;
-            AddLog(Clock(missionTime), $"자동 조정 예약 · 다음 원지점(T+{Clock(pendingBurn.Value)[2..]})에서 원궤도화 분사");
+            AddLog(missionTime, $"자동 조정 예약 · 다음 원지점(T+{Clock(pendingBurn.Value)[2..]})에서 원궤도화 분사");
         });
     }
 
@@ -487,12 +492,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void Burn(Debris sat, string direction, double deltaV)
     {
-        if (deltaVUsed + deltaV > DeltaVBudget + 1e-9) { AddLog(Clock(missionTime), $"분사 불가 · 남은 Δv {DeltaVBudget - deltaVUsed:0.0} m/s"); return; }
+        if (deltaVUsed + deltaV > DeltaVBudget + 1e-9) { AddLog(missionTime, $"분사 불가 · 남은 Δv {DeltaVBudget - deltaVUsed:0.0} m/s"); return; }
         var before = OrbitMath.Elements(sat.Position, sat.Velocity);
         previousOrbitPoints = OrbitMath.Revolution(sat.Position, sat.Velocity).Select(SceneGeometry.Point).ToList();
         sat.ApplyDeltaV(Direction(sat, direction) * deltaV); deltaVUsed += deltaV;
         var after = OrbitMath.Elements(sat.Position, sat.Velocity);
-        AddLog(Clock(missionTime), $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {before.PerigeeKm:N1}→{after.PerigeeKm:N1} km, 원지점 {before.ApogeeKm:N1}→{after.ApogeeKm:N1} km, 경사각 {before.InclinationDeg:0.000}→{after.InclinationDeg:0.000}°");
+        AddLog(missionTime, $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {before.PerigeeKm:N1}→{after.PerigeeKm:N1} km, 원지점 {before.ApogeeKm:N1}→{after.ApogeeKm:N1} km, 경사각 {before.InclinationDeg:0.000}→{after.InclinationDeg:0.000}°");
         LatestEvent = $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {after.PerigeeKm:N0} km / 원지점 {after.ApogeeKm:N0} km"; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
         lastRibbon = double.NegativeInfinity;
     }
@@ -503,7 +508,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (Satellite is not { } sat) return;
         // At apoapsis the velocity is horizontal; raise it to circular speed at this radius.
         double needed = Math.Sqrt(Earth.Mu / sat.Position.Length) - sat.Velocity.Length;
-        if (needed <= 0.05) { AddLog(Clock(missionTime), "자동 조정 · 이미 원궤도에 가까워 분사 생략"); return; }
+        if (needed <= 0.05) { AddLog(missionTime, "자동 조정 · 이미 원궤도에 가까워 분사 생략"); return; }
         Burn(sat, "prograde", Math.Min(needed, DeltaVBudget - deltaVUsed));
     }
 
@@ -583,11 +588,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         var reference = NuriFlight2.Reference.FirstOrDefault(r => e.Name.StartsWith(r.Event));
         string compare = reference.Event is null ? "" : $" (실제 {reference.Time:0} s / {reference.AltitudeKm:0} km)";
-        AddLog(Clock(e.Time), $"{e.Name} · {e.AltitudeKm:0.0} km, {e.SpeedKms:0.00} km/s{compare}");
+        AddLog(e.Time, $"{e.Name} · {e.AltitudeKm:0.0} km, {e.SpeedKms:0.00} km/s{compare}");
         LatestEvent = e.Name; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
+        ShowCardFor(e.Name);
     }
 
-    private void AddLog(string clock, string text) => Log.Insert(0, $"{clock}  {text}");
+    // Newest first, ordered by mission time (a jump replays many events in one frame, out of order).
+    private readonly List<double> logTimes = [];
+    private void AddLog(double time, string text)
+    {
+        int index = logTimes.FindIndex(t => t <= time); if (index < 0) index = logTimes.Count;
+        logTimes.Insert(index, time); Log.Insert(index, $"{Clock(time)}  {text}");
+    }
     public static string Clock(double t)
     {
         var span = TimeSpan.FromSeconds(Math.Abs(t));
