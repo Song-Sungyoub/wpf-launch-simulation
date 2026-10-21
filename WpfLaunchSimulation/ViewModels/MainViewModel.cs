@@ -41,6 +41,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly NuriModel rocket = new();
     private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
+    private readonly CloudLayer clouds = new();
+    private readonly SkyDome skyDome;
     private readonly EarthEffects.LimbGlow limbGlow = new();
     private Matrix3D padFrame;
     // Smoke billboards need the camera in pad-local metres: invert pad frame → Earth rotation → moving origin.
@@ -56,7 +58,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var right = Vector3D.CrossProduct(LookDirection, UpDirection);
         var up = Vector3D.CrossProduct(right, LookDirection);
         var eye = new Point3D(CameraPosition.X * R, CameraPosition.Y * R, CameraPosition.Z * R);
-        smoke.Update(t, world.Transform(eye), world.Transform(right), world.Transform(up));
+        var padEye = world.Transform(eye); var padRight = world.Transform(right);
+        smoke.Update(t, padEye, padRight, world.Transform(up));
+        clouds.Update(padEye, padRight);
     }
     private readonly MatrixTransform3D rocketPose = new();
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
@@ -71,6 +75,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public MainViewModel()
     {
         SkyScene.Children.Add(StarField.Create());
+        skyDome = new SkyDome(SunDirection()); SkyScene.Children.Add(skyDome.Root);
         var sun = SunDirection();
         foreach (var scene in new[] { FarScene, NearScene })
         {
@@ -116,7 +121,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         NearScene.Children.Add(nearRoot);
         nearDebris = new Model3DGroup(); nearRoot.Children.Add(nearDebris);
         // Translucent smoke last: WPF writes depth for transparent pixels, so anything drawn after it would be hidden.
-        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(smoke.Root);
+        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(clouds.Root); smokeFrame.Children.Add(smoke.Root);
         var smokeEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) }; smokeEarthFixed.Children.Add(smokeFrame);
         nearRoot.Children.Add(smokeEarthFixed);
 
@@ -336,13 +341,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         return CameraMode.Globe;
     }
 
-    private void UpdateCamera(double t, double wall)
+    private readonly record struct ViewSpec(Point3D Eye, Vector3D Look, double Fov, double NearMeters, Point3D Origin);
+    private ViewSpec ComputeView(CameraMode view, double t, Point3D center, Vector3D up)
     {
-        var mode = Director(t);
-        if (mode != activeMode) { activeMode = mode; Notify(nameof(CameraText)); Notify(nameof(IsControlRoom)); Notify(nameof(ControlRoomVisibility)); }
-        var view = mode == CameraMode.ControlRoom ? CameraMode.Chase : mode;
-        var center = SceneGeometry.Point(FocusCenter);
-        var up = SceneGeometry.Direction(FocusCenter);
         Point3D origin = center, eye; Vector3D look; double fov = 45, nearMeters;
         switch (view)
         {
@@ -390,6 +391,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 break;
             }
         }
+        look.Normalize();
+        return new ViewSpec(eye, look, fov, nearMeters, origin);
+    }
+
+    private void UpdateCamera(double t, double wall)
+    {
+        var mode = Director(t);
+        if (mode != activeMode) { activeMode = mode; Notify(nameof(CameraText)); Notify(nameof(IsControlRoom)); Notify(nameof(ControlRoomVisibility)); }
+        var view = mode == CameraMode.ControlRoom ? CameraMode.Chase : mode;
+        var center = SceneGeometry.Point(FocusCenter);
+        var up = SceneGeometry.Direction(FocusCenter);
+        var spec = ComputeView(view, t, center, up);
+        Point3D origin = spec.Origin, eye = spec.Eye; Vector3D look = spec.Look; double fov = spec.Fov, nearMeters = spec.NearMeters;
         // Positions relative to the moving origin; double precision on the CPU keeps metre-scale detail.
         farOrigin.OffsetX = nearOrigin.OffsetX = -origin.X; farOrigin.OffsetY = nearOrigin.OffsetY = -origin.Y; farOrigin.OffsetZ = nearOrigin.OffsetZ = -origin.Z;
         CameraPosition = new Point3D(eye.X - origin.X, eye.Y - origin.Y, eye.Z - origin.Z);
@@ -405,7 +419,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         // a 1 m..3,000 km range leaves no depth precision and inner parts show through the fairing.
         double focusMetres = ((Vector3D)(eye - center)).Length * R;
         NearNearPlane = Math.Max(nearMeters, focusMetres * 0.01) / R;
-        NearFarPlane = Math.Max(focusMetres * 50, 20e3) / R;
+        NearFarPlane = Math.Max(focusMetres * 50, 70e3) / R; // clouds reach ~50 km from the pad
         fillLight.Direction = look;
         // Ribbon and marker sizes follow the camera distance.
         double viewDist = ((Vector3D)(eye - center)).Length;
@@ -423,6 +437,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             if (previousOrbitPoints.Count > 1) previousOrbit.Geometry = SceneGeometry.Ribbon(previousOrbitPoints, width * 0.6);
         }
         UpdateSky(eye);
+        UpdateInset(view, t, center, up, origin);
         foreach (var p in new[] { nameof(CameraPosition), nameof(LookDirection), nameof(UpDirection), nameof(FieldOfView), nameof(FarNearPlane), nameof(FarFarPlane), nameof(NearNearPlane), nameof(NearFarPlane) }) Notify(p);
     }
 
@@ -442,6 +457,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         byte Mix(byte x, byte y, byte n) => (byte)(n + ((x + (y - x) * f) - n) * day);
         var brush = new SolidColorBrush(Color.FromRgb(Mix(a.R, b.R, night.R), Mix(a.G, b.G, night.G), Mix(a.B, b.B, night.B))); brush.Freeze();
         SkyBrush = brush; StarOpacity = 1 - day * Math.Clamp(1 - km / 60, 0, 1);
+        skyDome.Update(up, day, km, brush.Color);
         Notify(nameof(SkyBrush)); Notify(nameof(StarOpacity));
         limbGlow.Update(eye);
     }

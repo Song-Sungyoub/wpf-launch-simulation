@@ -80,6 +80,34 @@
                         <TextBlock Text="{Binding CardText}" FontSize="12" Foreground="#DCE6F2" TextWrapping="Wrap" LineHeight="19" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
+                <!-- Picture-in-picture: onboard camera while chasing (or the reverse); click to swap. -->
+                <Button Width="384" Height="216" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,74" Cursor="Hand"
+                        Visibility="{Binding InsetVisibility}" Command="{Binding SwapInsetCommand}" AutomationProperties.Name="카메라 전환">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border CornerRadius="8" BorderBrush="#65DEE0" BorderThickness="1.5" ClipToBounds="True" Background="{Binding SkyBrush}">
+                                <ContentPresenter/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Grid>
+                        <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
+                            <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
+                            <ModelVisual3D Content="{Binding SkyScene}"/>
+                        </Viewport3D>
+                        <Viewport3D IsHitTestVisible="False">
+                            <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetFarNearPlane}" FarPlaneDistance="{Binding InsetFarFarPlane}"/></Viewport3D.Camera>
+                            <ModelVisual3D Content="{Binding FarScene}"/>
+                        </Viewport3D>
+                        <Viewport3D IsHitTestVisible="False">
+                            <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetNearNearPlane}" FarPlaneDistance="{Binding InsetNearFarPlane}"/></Viewport3D.Camera>
+                            <ModelVisual3D Content="{Binding NearScene}"/>
+                        </Viewport3D>
+                        <Border Background="#B3081425" CornerRadius="4" Padding="6,2" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <TextBlock Text="{Binding InsetLabel}" FontSize="11" Foreground="#E7EEF8"/>
+                        </Border>
+                    </Grid>
+                </Button>
                 <!-- Mission timeline: click to jump -->
                 <Border VerticalAlignment="Bottom" Margin="14,0,14,12" Height="52" CornerRadius="8" Background="#CC0B1426">
                     <Canvas x:Name="TimelineCanvas" Margin="12,0" ClipToBounds="False" Background="Transparent" Cursor="Hand"
