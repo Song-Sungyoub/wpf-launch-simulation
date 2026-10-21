@@ -57,17 +57,9 @@ public sealed class NuriModel
         double[] plumeRadius = [1.6, 0.8, 0.35];
         for (int i = 0; i < 3; i++)
         {
-            var glow = new MaterialGroup();
-            glow.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
-            glow.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(130, 255, 190, 90))));
-            glow.Freeze();
-            var core = Cylinder(0, -1, plumeRadius[i], plumeRadius[i] * 0.25, glow);
-            core.BackMaterial = glow;
-            var hot = new MaterialGroup();
-            hot.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
-            hot.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(200, 255, 245, 210))));
-            hot.Freeze();
-            var inner = Cylinder(0, -0.35, plumeRadius[i] * 0.55, plumeRadius[i] * 0.1, hot);
+            // Hot white core and a longer orange envelope, both fading to transparent toward the tail.
+            var core = PlumeCone(plumeRadius[i], plumeRadius[i] * 0.25, 1.0, Glow(Color.FromArgb(150, 255, 196, 110), Color.FromArgb(70, 255, 150, 70), Color.FromArgb(0, 255, 120, 60)));
+            var inner = PlumeCone(plumeRadius[i] * 0.6, plumeRadius[i] * 0.12, 0.4, Glow(Color.FromArgb(240, 255, 252, 235), Color.FromArgb(170, 255, 228, 160), Color.FromArgb(0, 255, 210, 140)));
             PlumeModels[i].Children.Add(inner); PlumeModels[i].Children.Add(core);
             // Scale Y = plume length; translated to the nozzle exit.
             var transforms = new Transform3DGroup();
@@ -102,6 +94,30 @@ public sealed class NuriModel
             mesh.Positions.Add(new Point3D(radius * c, y1, radius * s)); mesh.Normals.Add(normal); mesh.TextureCoordinates.Add(new System.Windows.Point(1 - (double)i / segments, 0));
         }
         for (int i = 0; i < segments; i++) { int a = i * 2, b = a + 2; foreach (int k in new[] { a, b, a + 1, a + 1, b, b + 1 }) mesh.TriangleIndices.Add(k); }
+        mesh.Freeze();
+        return new GeometryModel3D(mesh, material) { BackMaterial = material };
+    }
+
+    private static Material Glow(Color start, Color middle, Color end)
+    {
+        var gradient = new LinearGradientBrush(new GradientStopCollection([new(start, 0), new(middle, 0.45), new(end, 1)]), new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+        var material = new MaterialGroup();
+        material.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
+        material.Children.Add(new EmissiveMaterial(gradient));
+        material.Freeze(); return material;
+    }
+
+    // Open cone from y = 0 (nozzle exit, v = 0) down to y = -length (v = 1), double-sided.
+    private static GeometryModel3D PlumeCone(double r0, double r1, double length, Material material, int segments = 32)
+    {
+        var mesh = new MeshGeometry3D();
+        for (int i = 0; i <= segments; i++)
+        {
+            double a = 2 * Math.PI * i / segments, c = Math.Cos(a), s = Math.Sin(a);
+            mesh.Positions.Add(new Point3D(r0 * c, 0, r0 * s)); mesh.TextureCoordinates.Add(new System.Windows.Point((double)i / segments, 0));
+            mesh.Positions.Add(new Point3D(r1 * c, -length, r1 * s)); mesh.TextureCoordinates.Add(new System.Windows.Point((double)i / segments, 1));
+        }
+        for (int i = 0; i < segments; i++) { int a = i * 2, b = a + 2; foreach (int k in new[] { a, a + 1, b, b, a + 1, b + 1 }) mesh.TriangleIndices.Add(k); }
         mesh.Freeze();
         return new GeometryModel3D(mesh, material) { BackMaterial = material };
     }

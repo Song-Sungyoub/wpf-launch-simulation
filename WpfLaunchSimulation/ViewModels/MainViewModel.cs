@@ -41,6 +41,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly NuriModel rocket = new();
     private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
+    private Matrix3D padFrame;
+    // Smoke billboards need the camera in pad-local metres: invert pad frame → Earth rotation → moving origin.
+    private void UpdateSmoke(double t)
+    {
+        var world = padFrame;
+        world.Append(new RotateTransform3D(earthAngle).Value);
+        world.Append(nearOrigin.Value);
+        // Scene units are Earth radii; rescale to metres first so the matrix is well conditioned for inversion.
+        world.Append(new ScaleTransform3D(R, R, R).Value);
+        if (!world.HasInverse) return;
+        world.Invert();
+        var right = Vector3D.CrossProduct(LookDirection, UpDirection);
+        var up = Vector3D.CrossProduct(right, LookDirection);
+        var eye = new Point3D(CameraPosition.X * R, CameraPosition.Y * R, CameraPosition.Z * R);
+        smoke.Update(t, world.Transform(eye), world.Transform(right), world.Transform(up));
+    }
     private readonly MatrixTransform3D rocketPose = new();
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
     private readonly HashSet<Debris> reportedLandings = [];
@@ -87,8 +103,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farInertial);
         FarScene.Children.Add(farRoot);
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
-        var pad = new Model3DGroup { Transform = new MatrixTransform3D(LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM))) };
-        pad.Children.Add(PadModel.Create()); pad.Children.Add(smoke.Root);
+        padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
+        var pad = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) };
+        pad.Children.Add(PadModel.Create());
         var nearEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) };
         nearEarthFixed.Children.Add(pad);
         rocket.Root.Transform = rocketPose;
@@ -96,6 +113,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         nearRoot.Children.Add(nearEarthFixed); nearRoot.Children.Add(rocket.Root);
         NearScene.Children.Add(nearRoot);
         nearDebris = new Model3DGroup(); nearRoot.Children.Add(nearDebris);
+        // Translucent smoke last: WPF writes depth for transparent pixels, so anything drawn after it would be hidden.
+        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(smoke.Root);
+        var smokeEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) }; smokeEarthFixed.Children.Add(smokeFrame);
+        nearRoot.Children.Add(smokeEarthFixed);
 
         StartCommand = new ActionCommand(() => { playing = !playing; Notify(nameof(PlayText)); });
         SkipCountdownCommand = new ActionCommand(() => { if (missionTime < -15) missionTime = -15; });
@@ -153,10 +174,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (t >= time && countdownLogged.Add(time)) AddLog(Clock(time), text);
         earthAngle.Angle = Earth.OmegaRadPerSecond * t * 180 / Math.PI;
         UpdateRocket(t);
-        smoke.Update(t);
         UpdateDebris();
         if (t > 0 && t - lastSample >= 2) SampleTrack(t);
         UpdateCamera(t, wall);
+        UpdateSmoke(t);
         UpdateTelemetry(t);
     }
 
