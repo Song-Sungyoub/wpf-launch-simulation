@@ -66,10 +66,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var earthMaterial = new DiffuseMaterial(new ImageBrush(earthImage)); earthMaterial.Freeze();
         farEarthFixed.Transform = new RotateTransform3D(earthAngle);
         farEarthFixed.Children.Add(SceneGeometry.Sphere(1, earthMaterial, 160, 80));
-        // The patch only covers a small UV range; brushes map UVs relative to the mesh's own UV bounds by default,
-        // which would stretch the whole world map over it. Use absolute 0..1 texture space instead.
-        var patchMaterial = new DiffuseMaterial(new ImageBrush(earthImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
-        farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial));
+        // Pad area: NASA GIBS Landsat WELD (2000, ~30 m) resampled by build_assets/prepare_pad_texture.py.
+        // Brushes map UVs relative to the mesh's own UV range by default; use absolute 0..1 texture space.
+        var areaImage = new BitmapImage();
+        areaImage.BeginInit(); areaImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/naro-area.jpg"); areaImage.EndInit(); areaImage.Freeze();
+        var patchMaterial = new DiffuseMaterial(new ImageBrush(areaImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
+        farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
+            (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9)));
         farEarthFixed.Children.Add(SceneGeometry.Clouds());
         groundTrack.BackMaterial = groundTrack.Material; groundTrackHost.Children.Add(groundTrack);
         farEarthFixed.Children.Add(groundTrackHost); farEarthFixed.Children.Add(landingHost);
@@ -181,6 +184,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (i != burning) continue;
             double h = t > 0 ? sim.Altitude : 0, expand = 1 + Math.Min(h / 60e3, 1.2);
             double length = i switch { 0 => t <= 0 ? 6 + (t + 4) * 4 : 22 + h / 2500, 1 => 26, _ => 12 } * (0.92 + 0.08 * Math.Sin(t * 37));
+            // Near the pad the exhaust goes down the flame duct (drawn by LaunchSmoke); never draw it through the deck.
+            if (i == 0) length = Math.Min(length, Math.Max(h - NuriFlight2.PadAltitudeM, 0) * 1.5);
+            if (length < 0.5) { SetPart(rocket.PlumeModels[i], false); continue; }
             rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = expand; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
         }
     }

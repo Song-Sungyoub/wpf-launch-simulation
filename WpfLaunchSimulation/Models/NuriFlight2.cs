@@ -14,7 +14,9 @@ public static class NuriFlight2
     public const string Title = "누리호 2차 발사";
 
     // Naro Space Center launch complex 2 (en.wikipedia; KARI publishes 34.43°N 127.53°E).
-    public const double PadLatitude = 34.431636, PadLongitude = 127.534411, PadAltitudeM = 100; // altitude [근사]
+    // Altitude [근사]: the scene terrain is a smooth sphere at sea level, so the pad sits just above it (the real pad
+    // elevation is not published; launch complex 1 is reported at about 110 m).
+    public const double PadLatitude = 34.431636, PadLongitude = 127.534411, PadAltitudeM = 3;
 
     // KRE-075 (KARI): sea-level thrust 674.7 kN, vacuum Isp 304.8 s, 255 kg/s per engine; stage 1 clusters four.
     public static readonly StageSpec Stage1 = new("1단", 125.5e3, 19.8e3, 1020.0, 1020.0 * 304.8 * Earth.G0, 4 * 674.7e3, 3.5, 21.6);

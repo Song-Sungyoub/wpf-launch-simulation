@@ -1,0 +1,9 @@
+{
+  "source": "NASA GIBS Landsat_WELD_CorrectedReflectance_TrueColor_Global_Annual (2000-12-01), level 12, https://gibs.earthdata.nasa.gov",
+  "projection": "equirectangular",
+  "latMin": 33.681636,
+  "latMax": 35.181636,
+  "lonMin": 126.634411,
+  "lonMax": 128.434411,
+  "size": 4096
+}

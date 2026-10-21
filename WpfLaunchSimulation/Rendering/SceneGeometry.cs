@@ -40,7 +40,9 @@ public static class SceneGeometry
 
     // High-resolution spherical cap around the pad, so the coarse globe facets (~150 km) do not show at close range.
     // It lies on the true sphere, above the globe's chords, and samples the same texture.
-    public static GeometryModel3D GroundPatch(double latitude, double longitude, double radiusKm, Material material, int rings = 60, int segments = 90)
+    // UVs map into the given latitude/longitude texture bounds (an equirectangular regional image).
+    public static GeometryModel3D GroundPatch(double latitude, double longitude, double radiusKm, Material material,
+        (double LatMin, double LatMax, double LonMin, double LonMax) bounds, int rings = 60, int segments = 90)
     {
         var mesh = new MeshGeometry3D();
         var center = Earth.FixedPosition(latitude, longitude, 0).Unit;
@@ -57,7 +59,7 @@ public static class SceneGeometry
                 var geo = Earth.Geodetic(dir * Earth.Radius);
                 mesh.Positions.Add(Point(dir * (Earth.Radius + 2)));
                 mesh.Normals.Add(Direction(dir));
-                mesh.TextureCoordinates.Add(new Point((geo.Longitude + 180) / 360, (90 - geo.Latitude) / 180));
+                mesh.TextureCoordinates.Add(new Point((geo.Longitude - bounds.LonMin) / (bounds.LonMax - bounds.LonMin), (bounds.LatMax - geo.Latitude) / (bounds.LatMax - bounds.LatMin)));
             }
         }
         for (int ring = 0; ring < rings; ring++)

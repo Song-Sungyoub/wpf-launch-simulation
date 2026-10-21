@@ -1,10 +1,10 @@
-# WPF Launch Simulation
+﻿# WPF Launch Simulation
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 .NET 9 / Windows WPF Viewport3D simulation of Korea's **Nuri (KSLV-II) flight 2** (2022-06-21 16:00 KST, Naro Space Center): countdown, liftoff, Max-Q, stage and fairing separations, orbit insertion and satellite separation, rebuilt from public sources for education. No game engine, HelixToolkit or custom shaders.
 
-> Status: early version. Flight model, countdown, telemetry, camera direction, control room and the post-insertion fine-adjustment exercise work end to end; launch visuals and pad terrain are still being improved.
+> Status: early version. Flight model, countdown, telemetry, camera direction, control room and the post-insertion fine-adjustment exercise work end to end; visuals are still being refined.
 
 ## What it shows
 
@@ -15,6 +15,8 @@
 - **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view.
 - **Fine adjustment (education)**: after separation the camera and telemetry follow the performance verification satellite. "Auto" schedules a circularisation burn at the next apoapsis; the practice buttons apply prograde/retrograde, normal/antinormal and radial burns (1/5/10 m/s) and show the orbit before (grey) and after (cyan). The 30 m/s Δv budget is an example value, not a satellite specification.
 - **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
+
+Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). The source mosaic has some swath-edge streaks over the sea, and terrain is flat (no elevation).
 
 ## Accuracy
 
