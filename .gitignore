@@ -8,3 +8,5 @@ preview*.png
 
 # Local interactive preview builds
 Preview/
+
+__pycache__/

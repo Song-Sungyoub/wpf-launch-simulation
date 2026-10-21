@@ -14,7 +14,7 @@ P = dict(
     kick_t=10.0, kick_end=22.0, kick_deg=0.75,
     coast12=4.0, coast23=4.0, fairing_t=227.0,
     lat=34.431636, lon=127.534411, alt=100.0, az=192.8,
-    target_alt=700e3, cd=0.32, inc=98.2, plane_tau=40.0, vz_gain=1.0, vz_tau=30.0, vfrac=0.5, s2_pitchdown=0.0,
+    target_alt=700e3, cd=0.32, inc=98.2, plane_tau=40.0, vz_gain=1.0, vz_tau=30.0, vfrac=0.5, s2_pitchdown=0.0, s1_loft=0.0,
 )
 
 def vadd(a,b): return [a[0]+b[0],a[1]+b[1],a[2]+b[2]]
@@ -24,6 +24,21 @@ def dot(a,b): return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
 def norm(a): return math.sqrt(dot(a,a))
 def unit(a): n=norm(a); return [a[0]/n,a[1]/n,a[2]/n]
 def cross(a,b): return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+
+def splash(t, r, v, mass, area, p):
+    """Ballistic fall with drag (Cd 1.0, as the app's Debris); surface distance from the pad in the Earth-fixed frame."""
+    lat=math.radians(p['lat']); lon=math.radians(p['lon'])
+    pad=[math.cos(lat)*math.cos(lon),math.cos(lat)*math.sin(lon),math.sin(lat)]
+    w=[0,0,OMEGA]; dt=0.5
+    while norm(r)>RE and t<6000:
+        rr=norm(r); vrel=vsub(v,cross(w,r)); h=rr-RE
+        rho=1.225*math.exp(-h/8500.0) if h<150e3 else 0.0
+        q=0.5*rho*dot(vrel,vrel)
+        a=vadd(vmul(r,-MU/rr**3), vmul(unit(vrel),-q*area/mass) if norm(vrel)>0 else [0,0,0])
+        v=vadd(v,vmul(a,dt)); r=vadd(r,vmul(v,dt)); t+=dt
+    ang=-OMEGA*t; c,s_=math.cos(ang),math.sin(ang)
+    f=unit([c*r[0]-s_*r[1], s_*r[0]+c*r[1], r[2]])
+    return RE*math.acos(max(-1,min(1,dot(f,pad))))
 
 def run(p, verbose=False):
     lat=math.radians(p['lat']); lon=math.radians(p['lon'])
@@ -39,7 +54,7 @@ def run(p, verbose=False):
     stage=1; prop=p['s1_prop']; t=0.0; dt=0.05
     events=[]; fairing_on=True; coast_until=None; maxq=(0,0,0); maxg=0; done=False; sonic=None
     t_ign3=None
-    hist=[]
+    hist=[]; drops=[]
     def alt_of(r): return norm(r)-RE
     while t<1200 and not done:
         h=alt_of(r); up=unit(r)
@@ -66,6 +81,11 @@ def run(p, verbose=False):
             d=unit(vadd(vmul(up,math.cos(ang)),vmul(hdg,math.sin(ang))))
         elif stage<3:
             d=unit(vrel) if h<60e3 else unit(v)   # gravity turn (atmospheric: relative velocity)
+            if stage==1 and p['s1_loft']>0:
+                # stage-1 loft: thrust slightly above the velocity vector (steeper climb)
+                hd=unit(vsub(d,vmul(up,dot(d,up)))); el=math.asin(max(-1,min(1,dot(d,up))))
+                el=min(el+math.radians(p['s1_loft']),math.radians(89.9))
+                d=unit(vadd(vmul(hd,math.cos(el)),vmul(up,math.sin(el))))
             if stage==2:
                 # stage-2 steering: pitch the thrust below the velocity vector toward the horizontal
                 hd=unit(vsub(d,vmul(up,dot(d,up)))); el=math.asin(max(-1,min(1,dot(d,up))))
@@ -101,15 +121,15 @@ def run(p, verbose=False):
         t+=dt
         if int(t/1)!=int((t-dt)/1): hist.append((round(t),round(h/1000,1),round(vi/1000,3)))
         if fairing_on and t>=p['fairing_t']:
-            fairing_on=False; mass-=p['fairing']; events.append(('fairing',t,h,norm(v),dot(v,up)))
+            fairing_on=False; mass-=p['fairing']; events.append(('fairing',t,h,norm(v),dot(v,up))); drops.append(('fairing',t,list(r),list(v),p['fairing']/2,6.0))
         if coast_until is not None and t>=coast_until:
             coast_until=None
             if stage==3: t_ign3=t
         if thrusting and prop<=0:
             if stage==1:
-                events.append(('s1_sep',t,h,norm(v),dot(v,up))); mass-=p['s1_dry']; stage=2; prop=p['s2_prop']; coast_until=t+p['coast12']
+                events.append(('s1_sep',t,h,norm(v),dot(v,up))); drops.append(('s1',t,list(r),list(v),p['s1_dry'],math.pi*3.5**2/4*1.5)); mass-=p['s1_dry']; stage=2; prop=p['s2_prop']; coast_until=t+p['coast12']
             elif stage==2:
-                events.append(('s2_sep',t,h,norm(v),dot(v,up))); mass-=p['s2_dry']; stage=3; prop=p['s3_prop']; coast_until=t+p['coast23']
+                events.append(('s2_sep',t,h,norm(v),dot(v,up))); drops.append(('s2',t,list(r),list(v),p['s2_dry'],math.pi*2.6**2/4*1.5)); mass-=p['s2_dry']; stage=3; prop=p['s3_prop']; coast_until=t+p['coast23']
             else:
                 events.append(('s3_burnout',t,h,norm(v),dot(v,up))); done=True
         if stage==3 and coast_until is None and prop>0:
@@ -123,6 +143,7 @@ def run(p, verbose=False):
     res=dict(events=[(n,round(tt,1),round(hh/1000,1),round(vv/1000,2),round(vz/1000,2)) for n,tt,hh,vv,vz in events], perigee=round((aa*(1-e)-RE)/1000,1),
              apogee=round((aa*(1+e)-RE)/1000,1), inc=round(inc,2), v=round(norm(v)/1000,3), prop_left=round(prop),
              maxq=(round(maxq[0]/1000,1),round(maxq[1],1),round(maxq[2]/1000,1)), maxg=round(maxg,2), sonic=sonic and (round(sonic[0],1),round(sonic[1]/1000,1)))
+    res['splash']={n:round(splash(t0,r0,v0,m,a,p)/1000) for n,t0,r0,v0,m,a in drops}
     if verbose: res['hist']=[x for x in hist if x[0]%60==0]
     return res
 
