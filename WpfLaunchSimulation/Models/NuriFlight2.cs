@@ -38,8 +38,6 @@ public static class NuriFlight2
 
     // Published actual times for events the dynamics do not decide (KARI: 875 s first separation, +70 s second).
     public const double SatelliteSeparation = 875, DummySeparation = 945, FlightEnd = 1095;
-    // Solar panel deployment after separation: not published; illustrative timing for the education view [근사].
-    public const double PanelDeployStart = SatelliteSeparation + 20, PanelDeployDuration = 30;
 
     // Published actual values used to compare the simulation on screen.
     public static readonly (string Event, double Time, double AltitudeKm)[] Reference =

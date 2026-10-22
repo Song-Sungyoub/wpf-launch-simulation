@@ -44,18 +44,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
     private SatelliteModel? satelliteModel;
-    private bool panelStartLogged, panelDoneLogged;
-    private void UpdatePanels(double t)
-    {
-        double f = (t - NuriFlight2.PanelDeployStart) / NuriFlight2.PanelDeployDuration;
-        satelliteModel!.SetDeployment(f);
-        if (f >= 0 && !panelStartLogged)
-        {
-            panelStartLogged = true; AddLog(NuriFlight2.PanelDeployStart, "태양전지판 전개 시작 (시각·형상은 교육용 예시)");
-            LatestEvent = "태양전지판 전개"; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility)); ShowCardFor("태양전지판");
-        }
-        if (f >= 1 && !panelDoneLogged) { panelDoneLogged = true; AddLog(NuriFlight2.PanelDeployStart + NuriFlight2.PanelDeployDuration, "태양전지판 전개 완료"); }
-    }
     private readonly CloudLayer clouds = new();
     private readonly SkyDome skyDome;
     private readonly EarthEffects.LimbGlow limbGlow = new();
@@ -166,7 +154,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         missionTime = CountdownStart; playing = false; speed = 1;
         rocket.Root.Children.Clear();
         foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
-        satelliteModel = null; panelStartLogged = panelDoneLogged = false;
+        satelliteModel = null; ResetSatellitePhases();
         pendingBurn = null; deltaVUsed = 0; previousOrbitPoints = []; previousOrbit.Geometry = null;
         nearDebris.Children.Clear(); debrisModels.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
@@ -274,8 +262,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             }
             // Tumble about an axis across the body; parts start aligned with the rocket.
             var axis = (rocketAxis * Math.Cos(piece.Tumble) + Vec.Cross(rocketAxis, piece.Position.Unit).Unit * Math.Sin(piece.Tumble)).Unit;
-            entry.Pose.Matrix = Pose(piece.Position, piece.Kind <= 3 ? axis : rocketAxis, 1);
-            if (piece.Kind == 4 && satelliteModel is not null) UpdatePanels(sim.Time);
+            entry.Pose.Matrix = piece.Kind == 4 ? SatellitePose(piece, sim.Time) : Pose(piece.Position, piece.Kind <= 3 ? axis : rocketAxis, 1);
+            if (piece.Kind == 4) LogSatellitePhases(sim.Time);
             if (piece.Landed && reportedLandings.Add(piece) && piece.Kind <= 3)
             {
                 double km = Earth.SurfaceDistance(sim.PadFixed, Earth.InertialToFixed(piece.Position, piece.LandedTime)) / 1000;
@@ -577,6 +565,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var el = OrbitMath.Elements(sat.Position, sat.Velocity);
         ManeuverStatus = $"성능검증위성 궤도 · 근지점 {el.PerigeeKm:N1} km · 원지점 {el.ApogeeKm:N1} km · 이심률 {el.Eccentricity:0.0000}\n"
             + $"경사각 {el.InclinationDeg:0.000}° · 주기 {el.PeriodSeconds / 60:0.0}분 · 다음 원지점까지 {el.TimeToApoapsis / 60:0.0}분\n"
+            + $"자세: {(missionTime >= SunPointEnd ? "태양 지향" : missionTime >= FineEnd ? "태양 지향 기동 중" : missionTime >= DespinStart ? "회전 감쇠 중" : "텀블링")} · 회전 {SatelliteRateDeg(missionTime):0.00}°/s\n"
             + $"사용 Δv {deltaVUsed:0.0} / {DeltaVBudget:0} m/s" + (pendingBurn is double p ? $" · 자동 분사 {Math.Max(p - missionTime, 0) / 60:0.0}분 후" : "");
         Notify(nameof(ManeuverStatus));
     }

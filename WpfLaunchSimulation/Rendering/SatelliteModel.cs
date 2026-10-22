@@ -3,53 +3,44 @@ using System.Windows.Media.Media3D;
 
 namespace WpfLaunchSimulation.Rendering;
 
-// Performance verification satellite, illustrative: KARI publishes the body size (930 × 892 × 903 mm) and mass, not
-// the panel layout or deployment sequence. Two solar panels are hinged at the ±X edges of the top face; stowed they
-// stand upright (inside the fairing, clear of stage 3), deployed they extend outward. Local metres, +Y along the launch vehicle axis; the model sits
-// where the payload rides (above stage 3) so it continues from the separation pose.
+// Performance verification satellite (PVSAT). Public: body 930 × 892 × 903 mm, 162.5 kg, solar panels that had to be
+// turned to the Sun after separation (KSAS 2023 FA5 abstracts). From released photos [추정]: no deployable wings; flat
+// panels fixed on the two sides next to the cubesat-ejector face, with two metal straps across each; gold MLI elsewhere.
+// Local metres, +Y along the launch vehicle axis, placed where the payload rides (above stage 3).
 public sealed class SatelliteModel
 {
-    public const double BaseY = NuriModel.Stage3Top + 0.45, Size = 0.92, PanelLength = 1.6, PanelWidth = 0.86;
+    public const double BaseY = NuriModel.Stage3Top + 0.45, SizeX = 0.93, SizeY = 0.903, SizeZ = 0.892;
+    public static readonly Point3D Center = new(0, BaseY + SizeY / 2, 0);
     public Model3DGroup Root { get; } = new();
-    private readonly AxisAngleRotation3D left = new(new Vector3D(0, 0, 1), 0), right = new(new Vector3D(0, 0, 1), 0);
-    public double Deployed { get; private set; } = -1;
 
     public SatelliteModel()
     {
         var foil = NuriModel.Lit(Color.FromRgb(214, 170, 72));
         var dark = NuriModel.Lit(Color.FromRgb(60, 62, 70));
+        var metal = NuriModel.Lit(Color.FromRgb(170, 172, 178));
         var cells = new MaterialGroup();
-        cells.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(26, 44, 104))));
-        cells.Children.Add(new SpecularMaterial(new SolidColorBrush(Color.FromRgb(120, 140, 200)), 60));
+        cells.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(24, 40, 96))));
+        cells.Children.Add(new SpecularMaterial(new SolidColorBrush(Color.FromRgb(130, 150, 210)), 60));
         cells.Freeze();
-        double cy = BaseY + Size / 2;
-        Root.Children.Add(NuriModel.Box(0, cy, 0, Size, Size, Size, foil));
-        Root.Children.Add(NuriModel.Box(0, BaseY + 0.03, 0, Size * 0.7, 0.06, Size * 0.7, dark));          // separation ring
-        Root.Children.Add(NuriModel.Cylinder(BaseY + Size, BaseY + Size + 0.25, 0.04, 0.04, dark, 0.25, 0.25, 12)); // antenna
-        Root.Children.Add(NuriModel.Box(-0.2, BaseY + Size + 0.03, -0.2, 0.22, 0.06, 0.22, dark));         // sensor
-        foreach (var (rotation, sign) in new[] { (left, -1.0), (right, 1.0) })
+        double cy = Center.Y;
+        Root.Children.Add(NuriModel.Box(0, cy, 0, SizeX, SizeY, SizeZ, foil));
+        Root.Children.Add(NuriModel.Box(0, BaseY + 0.03, 0, SizeX * 0.7, 0.06, SizeZ * 0.7, dark));   // separation interface
+        // Body-mounted panels on ±X, slightly stood off, with two straps each.
+        foreach (double sign in new[] { -1.0, 1.0 })
         {
-            // Panel built deployed (extending along ±X from the hinge), then rotated down about the hinge to fold.
-            var panel = new Model3DGroup();
-            panel.Children.Add(NuriModel.Box(sign * (PanelLength / 2 + 0.05), 0, 0, PanelLength, 0.025, PanelWidth, cells));
-            panel.Children.Add(NuriModel.Box(sign * 0.03, 0, 0, 0.08, 0.05, 0.12, dark));                     // hinge
-            var transform = new Transform3DGroup();
-            transform.Children.Add(new RotateTransform3D(rotation));
-            transform.Children.Add(new TranslateTransform3D(sign * Size / 2, BaseY + Size - 0.02, 0));
-            panel.Transform = transform;
-            Root.Children.Add(panel);
+            double x = sign * (SizeX / 2 + 0.025);
+            Root.Children.Add(NuriModel.Box(x, cy, 0, 0.025, SizeY * 0.94, SizeZ * 0.94, cells));
+            foreach (double y in new[] { -0.17, 0.17 })
+                Root.Children.Add(NuriModel.Box(x + sign * 0.014, cy + y, 0, 0.012, 0.035, SizeZ * 0.96, metal));
         }
-        SetDeployment(0);
+        // Cubesat ejector face (+Z): five ports.
+        foreach (var (px, py) in new[] { (-0.25, 0.18), (0.0, 0.18), (0.25, 0.18), (-0.13, -0.12), (0.13, -0.12) })
+            Root.Children.Add(NuriModel.Box(px, cy + py, SizeZ / 2 + 0.01, 0.17, 0.17, 0.03, dark));
+        // Top: S-band antenna and sun sensor (positions illustrative).
+        Root.Children.Add(NuriModel.Cylinder(BaseY + SizeY, BaseY + SizeY + 0.18, 0.035, 0.035, dark, 0.28, -0.25, 12));
+        Root.Children.Add(NuriModel.Box(-0.22, BaseY + SizeY + 0.03, 0.22, 0.12, 0.06, 0.12, metal));
     }
 
-    // 0 = stowed upright, 1 = fully deployed.
-    public void SetDeployment(double fraction)
-    {
-        fraction = Math.Clamp(fraction, 0, 1);
-        if (fraction == Deployed) return;
-        Deployed = fraction;
-        double eased = fraction * fraction * (3 - 2 * fraction);
-        double fold = 90 * (1 - eased);
-        left.Angle = -fold; right.Angle = fold;
-    }
+    // Local direction of the panel normal used for sun pointing (+X panel).
+    public static readonly Vector3D PanelNormal = new(1, 0, 0);
 }
