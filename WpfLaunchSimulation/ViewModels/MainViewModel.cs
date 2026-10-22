@@ -41,10 +41,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly GeometryModel3D groundTrack = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 255, 150)) };
     private readonly ScaleTransform3D markerScale = new(); private readonly TranslateTransform3D markerPosition = new();
     private readonly NuriModel rocket = new();
-    private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
+    private readonly DirectionalLight fillLight = new(Color.FromRgb(26, 26, 30), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
     private SatelliteModel? satelliteModel;
     private readonly CloudLayer clouds = new();
+    private readonly PadShadows.Rocket rocketShadow = new();
+    private Vector3D padSun;
     private readonly SkyDome skyDome;
     private readonly EarthEffects.LimbGlow limbGlow = new();
     private Matrix3D padFrame;
@@ -64,6 +66,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var padEye = world.Transform(eye); var padRight = world.Transform(right);
         smoke.Update(t, padEye, padRight, world.Transform(up));
         clouds.Update(padEye, padRight);
+        var basePoint = SceneGeometry.Point(rocketBase);
+        var padBase = world.Transform(new Point3D((basePoint.X + nearOrigin.OffsetX) * R, (basePoint.Y + nearOrigin.OffsetY) * R, (basePoint.Z + nearOrigin.OffsetZ) * R));
+        rocketShadow.Update(padBase, NuriModel.FairingTop, NuriModel.Stage1Radius, padSun);
     }
     private readonly MatrixTransform3D rocketPose = new();
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
@@ -82,11 +87,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var sun = SunDirection();
         foreach (var scene in new[] { FarScene, NearScene })
         {
-            // The vehicle gets more ambient light (sky/Earth fill) so its shadowed side keeps some detail.
-            scene.Children.Add(new AmbientLight(scene == NearScene ? Color.FromRgb(92, 96, 106) : Color.FromRgb(46, 50, 60)));
+            // Near layer: modest cool ambient (skylight) so the side away from the Sun is visibly darker but keeps detail.
+            scene.Children.Add(new AmbientLight(scene == NearScene ? Color.FromRgb(66, 74, 90) : Color.FromRgb(46, 50, 60)));
             scene.Children.Add(new DirectionalLight(Color.FromRgb(255, 250, 240), -sun));
         }
-        NearScene.Children.Add(fillLight); // soft light from the camera so the shadowed side keeps detail
+        NearScene.Children.Add(fillLight); // faint light from the camera so the shadowed side never goes flat black
         // Far layer.
         var earthImage = new BitmapImage();
         earthImage.BeginInit(); earthImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/earth.jpg"); earthImage.EndInit(); earthImage.Freeze();
@@ -120,9 +125,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
         padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
         var pad = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) };
-        pad.Children.Add(PadModel.Create());
+        // Sun direction in pad-local axes (east, up, south rows of the pad frame) for the cast shadows.
+        Vector3D Row(double x, double y, double z) { var v = new Vector3D(x, y, z); v.Normalize(); return v; }
+        padSun = new Vector3D(Vector3D.DotProduct(sun, Row(padFrame.M11, padFrame.M12, padFrame.M13)),
+            Vector3D.DotProduct(sun, Row(padFrame.M21, padFrame.M22, padFrame.M23)), Vector3D.DotProduct(sun, Row(padFrame.M31, padFrame.M32, padFrame.M33)));
+        // A plain copy of the pad casts the shadows; they are painted into the apron and deck of the one shown.
+        var surfaces = PadShadows.Surfaces(PadModel.Create(), padSun, rocketShadow.Drawing);
+        pad.Children.Add(PadModel.Create(surfaces.Apron, surfaces.Deck));
         pad.Children.Add(PadSurroundings.Terrain(areaImage, (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9),
             NuriFlight2.PadLatitude, NuriFlight2.PadLongitude));
+        // Skylight: a cool light from straight above the pad, so upward faces are lighter than the shaded sides.
+        NearScene.Children.Insert(1, new DirectionalLight(Color.FromRgb(44, 52, 70), -Row(padFrame.M21, padFrame.M22, padFrame.M23)));
         var nearEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) };
         nearEarthFixed.Children.Add(pad);
         rocket.Root.Transform = rocketPose;

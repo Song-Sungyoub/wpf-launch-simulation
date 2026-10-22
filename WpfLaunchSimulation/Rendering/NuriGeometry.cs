@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 
@@ -233,7 +234,11 @@ public sealed class NuriModel
 // flame-trench direction and service buildings are illustrative, not drawings.
 public static class PadModel
 {
-    public static Model3DGroup Create()
+    public static readonly Rect ApronArea = new(-85, -75, 170, 150), DeckArea = new(-15, -15, 30, 30);
+    public static readonly Color DeckColor = Color.FromRgb(118, 116, 110);
+
+    // apronBrush / deckBrush: surface fills with the cast shadows painted in (see PadShadows); plain when null.
+    public static Model3DGroup Create(Brush? apronBrush = null, Brush? deckBrush = null)
     {
         var group = new Model3DGroup();
         var concrete = NuriModel.Lit(Color.FromRgb(168, 168, 162));
@@ -245,9 +250,11 @@ public static class PadModel
         var red = NuriModel.Lit(Color.FromRgb(190, 60, 52));
 
         // Apron, raised deck and launch table (rocket base at y = 0).
-        group.Children.Add(NuriModel.Box(0, -1.4, 0, 170, 0.8, 150, darkConcrete));
-        group.Children.Add(PadSurroundings.Apron(-0.99, 170, 150));
-        group.Children.Add(NuriModel.Box(0, -0.6, 0, 30, 1.2, 30, darkConcrete));
+        // Box tops sit a little below the textured top surfaces so the two never fight in the depth buffer.
+        group.Children.Add(NuriModel.Box(0, -1.45, 0, 170, 0.8, 150, darkConcrete));
+        group.Children.Add(PadSurroundings.Surface(PadShadows.ApronY, ApronArea, apronBrush ?? PadShadows.SurfaceBrush(ApronArea, PadSurroundings.Concrete())));
+        group.Children.Add(NuriModel.Box(0, -0.65, 0, 30, 1.2, 30, darkConcrete));
+        group.Children.Add(PadSurroundings.Surface(PadShadows.DeckY, DeckArea, deckBrush ?? new SolidColorBrush(DeckColor)));
         group.Children.Add(NuriModel.Box(0, -0.15, 0, 9, 0.3, 9, steel));
         foreach (var (x, z) in new[] { (2.6, 2.6), (-2.6, 2.6), (2.6, -2.6), (-2.6, -2.6) })
             group.Children.Add(NuriModel.Box(x, 0.6, z, 0.7, 1.5, 0.7, steel));                // hold-down posts
@@ -299,8 +306,7 @@ public static class PadModel
         group.Children.Add(PadSurroundings.Building(48, 2.5, 28, 14, 7, 10, Color.FromRgb(196, 204, 210)));
         group.Children.Add(NuriModel.Box(48, 6.1, 28, 14.3, 0.3, 10.3, steel));
         group.Children.Add(NuriModel.Box(40, 0, -55, 10, 2.5, 6, steel));
-        group.Freeze();
-        return group;
+        return group;   // not frozen: the vehicle-shadow overlay brush changes every frame
     }
 
     // Square-section beam between two points.

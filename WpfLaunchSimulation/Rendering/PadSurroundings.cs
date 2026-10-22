@@ -96,19 +96,21 @@ public static class PadSurroundings
         return new GeometryModel3D(mesh, material);
     }
 
-    // Concrete apron: a horizontal quad with 8 m slabs, joints, stains and darker scorch toward the flame trench.
-    public static GeometryModel3D Apron(double y, double sizeX, double sizeZ)
+    // Concrete apron tiles as a fill in pad-local metres (8 m slabs).
+    public static Brush Concrete() => new ImageBrush(ConcreteSlab()) { TileMode = TileMode.Tile, ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 8, 8) };
+
+    // Horizontal quad covering area (x, z in metres) with brush stretched over it (UV 0..1 across the area).
+    public static GeometryModel3D Surface(double y, Rect area, Brush brush)
     {
-        var mesh = new MeshGeometry3D();
-        foreach (var (x, z) in new[] { (-sizeX / 2, -sizeZ / 2), (sizeX / 2, -sizeZ / 2), (sizeX / 2, sizeZ / 2), (-sizeX / 2, sizeZ / 2) })
+        var mesh = new MeshGeometry3D
         {
-            mesh.Positions.Add(new Point3D(x, y, z)); mesh.Normals.Add(new Vector3D(0, 1, 0));
-            mesh.TextureCoordinates.Add(new Point(x / 8, z / 8));
-        }
-        mesh.TriangleIndices = new Int32Collection([0, 2, 1, 0, 3, 2]); mesh.Freeze();
-        var brush = new ImageBrush(ConcreteSlab()) { TileMode = TileMode.Tile, ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) };
-        var material = new DiffuseMaterial(brush); material.Freeze();
-        return new GeometryModel3D(mesh, material);
+            Positions = new Point3DCollection([new(area.Left, y, area.Top), new(area.Right, y, area.Top), new(area.Right, y, area.Bottom), new(area.Left, y, area.Bottom)]),
+            Normals = new Vector3DCollection([new(0, 1, 0), new(0, 1, 0), new(0, 1, 0), new(0, 1, 0)]),
+            TextureCoordinates = new PointCollection([new(0, 0), new(1, 0), new(1, 1), new(0, 1)]),
+            TriangleIndices = new Int32Collection([0, 2, 1, 0, 3, 2]),
+        };
+        mesh.Freeze();
+        return new GeometryModel3D(mesh, new DiffuseMaterial(brush));
     }
 
     private static BitmapSource ConcreteSlab()
