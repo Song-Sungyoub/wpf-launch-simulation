@@ -31,6 +31,7 @@
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="330"/></Grid.ColumnDefinitions>
         <Border CornerRadius="14" ClipToBounds="True" BorderBrush="#24334B" BorderThickness="1" Margin="0,0,12,0" Background="{Binding SkyBrush}">
             <Grid>
+                <Grid x:Name="MainScene">
                 <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
                     <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
                     <ModelVisual3D Content="{Binding SkyScene}"/>
@@ -47,6 +48,7 @@
                     <Viewport3D.Camera><PerspectiveCamera Position="{Binding CameraPosition}" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="{Binding NearNearPlane}" FarPlaneDistance="{Binding NearFarPlane}"/></Viewport3D.Camera>
                     <ModelVisual3D Content="{Binding NearScene}"/>
                 </Viewport3D>
+                </Grid>
                 <Border x:Name="InputSurface" Background="Transparent" MouseLeftButtonDown="OnPointerDown" MouseLeftButtonUp="OnPointerUp" MouseMove="OnPointerMove" MouseWheel="OnMouseWheel"/>
 
                 <!-- Heads-up telemetry -->
@@ -95,6 +97,7 @@
                         </ControlTemplate>
                     </Button.Template>
                     <Grid>
+                        <Grid x:Name="InsetScene">
                         <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
                             <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
                             <ModelVisual3D Content="{Binding SkyScene}"/>
@@ -111,6 +114,7 @@
                             <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetNearNearPlane}" FarPlaneDistance="{Binding InsetNearFarPlane}"/></Viewport3D.Camera>
                             <ModelVisual3D Content="{Binding NearScene}"/>
                         </Viewport3D>
+                        </Grid>
                         <Border Background="#B3081425" CornerRadius="4" Padding="6,2" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">
                             <TextBlock Text="{Binding InsetLabel}" FontSize="11" Foreground="#E7EEF8"/>
                         </Border>

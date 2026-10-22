@@ -16,6 +16,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        // Screen-space bloom, tone and vignette on the 3D layers only (not the HUD panels drawn over them).
+        if (Rendering.PostEffect.Available) { MainScene.Effect = new Rendering.PostEffect(); InsetScene.Effect = new Rendering.PostEffect { Vignette = 0.12 }; }
         CompositionTarget.Rendering += OnRendering;
         Closed += (_, _) => CompositionTarget.Rendering -= OnRendering;
     }
