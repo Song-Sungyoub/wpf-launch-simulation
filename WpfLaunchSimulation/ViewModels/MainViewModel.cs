@@ -366,7 +366,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 double top = sim.Stage == 1 ? NuriModel.Stage1Top : sim.Stage == 2 ? NuriModel.Stage2Top : NuriModel.Stage3Top;
                 var basePoint = SceneGeometry.Point(rocketBase);
                 double radius = sim.Stage == 1 ? NuriModel.Stage1Radius : NuriModel.UpperRadius;
-                eye = basePoint + y * ((top - 1.0) / R) + x * ((radius + 1.6) / R);
+                // Camera on a short mount just off the skin (+x side); the body is at −x from it.
+                eye = basePoint + y * ((top - 1.0) / R) + x * ((radius + 0.7) / R);
                 // Looking aft along the body. Just after liftoff the ground fills that view, so tilt toward the horizon
                 // and blend back to the aft view by ~8 km.
                 double low = t > 0 ? Math.Clamp(1 - sim.Altitude / 8000, 0, 1) : 1;
@@ -375,7 +376,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 var aft = -y + x * 0.28; aft.Normalize();
                 var horizontal = x - up * Vector3D.DotProduct(x, up); horizontal.Normalize();
                 double dip = 10 * Math.PI / 180;
-                var horizonView = horizontal * Math.Cos(dip) - up * Math.Sin(dip);
+                // Look tangent to the skin (along the body's side, toward the horizon) and slightly back toward it,
+                // so the fuselage runs down one side of the frame as a fixed camera would see it.
+                var sideways = Vector3D.CrossProduct(up, horizontal); sideways.Normalize();
+                var horizonView = sideways * Math.Cos(dip) - up * Math.Sin(dip) - horizontal * 0.22;
+                horizonView.Normalize();
                 look = aft * (1 - low) + horizonView * low; fov = 62 + 8 * low; origin = eye; nearMeters = 0.2;
                 break;
             }
