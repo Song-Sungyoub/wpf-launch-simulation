@@ -245,7 +245,8 @@ public static class PadModel
         var red = NuriModel.Lit(Color.FromRgb(190, 60, 52));
 
         // Apron, raised deck and launch table (rocket base at y = 0).
-        group.Children.Add(NuriModel.Box(0, -1.4, 0, 170, 0.8, 150, concrete));
+        group.Children.Add(NuriModel.Box(0, -1.4, 0, 170, 0.8, 150, darkConcrete));
+        group.Children.Add(PadSurroundings.Apron(-0.99, 170, 150));
         group.Children.Add(NuriModel.Box(0, -0.6, 0, 30, 1.2, 30, darkConcrete));
         group.Children.Add(NuriModel.Box(0, -0.15, 0, 9, 0.3, 9, steel));
         foreach (var (x, z) in new[] { (2.6, 2.6), (-2.6, 2.6), (2.6, -2.6), (-2.6, -2.6) })
@@ -293,9 +294,10 @@ public static class PadModel
         // Water tank and service buildings.
         group.Children.Add(NuriModel.Cylinder(-1, 14, 5, 5, white, -55, -40, 32));
         group.Children.Add(NuriModel.Cylinder(14, 15.5, 5, 0.8, white, -55, -40, 32));
-        group.Children.Add(NuriModel.Box(-52, 3.5, 32, 22, 9, 14, white));
+        group.Children.Add(PadSurroundings.Building(-52, 3.5, 32, 22, 9, 14, Color.FromRgb(214, 216, 212)));
         group.Children.Add(NuriModel.Box(-52, 8.3, 32, 22.4, 0.6, 14.4, steel));
-        group.Children.Add(NuriModel.Box(48, 2.5, 28, 14, 7, 10, white));
+        group.Children.Add(PadSurroundings.Building(48, 2.5, 28, 14, 7, 10, Color.FromRgb(196, 204, 210)));
+        group.Children.Add(NuriModel.Box(48, 6.1, 28, 14.3, 0.3, 10.3, steel));
         group.Children.Add(NuriModel.Box(40, 0, -55, 10, 2.5, 6, steel));
         group.Freeze();
         return group;

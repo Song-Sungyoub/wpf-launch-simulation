@@ -23,7 +23,7 @@
 - **Visuals**: Nuri model with flag and "대한민국" markings, seams, raceways and bell nozzles; detailed launch complex 2 (lattice tower, service arms, deck, flame trench, lightning masts; layout illustrative); soft billboard exhaust cloud; gradient plumes; altitude sky colours, night-side city lights and an atmosphere limb glow.
 - **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
 
-Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). The source mosaic has some swath-edge streaks over the sea, and terrain is flat (no elevation).
+Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). The source mosaic has some swath-edge streaks over the sea, and terrain is flat (no elevation). Within 3 km of the pad the same image drives a near-field terrain mesh (land/sea from the colours, procedural canopy and wave detail); its hill relief is illustrative since no elevation data is shipped. Apron concrete and building facades are procedural textures.
 
 ## Accuracy
 

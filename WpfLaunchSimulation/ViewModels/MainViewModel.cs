@@ -116,6 +116,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
         var pad = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) };
         pad.Children.Add(PadModel.Create());
+        pad.Children.Add(PadSurroundings.Terrain(areaImage, (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9),
+            NuriFlight2.PadLatitude, NuriFlight2.PadLongitude));
         var nearEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) };
         nearEarthFixed.Children.Add(pad);
         rocket.Root.Transform = rocketPose;
@@ -160,7 +162,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
         flightPath.Geometry = null; orbitPath.Geometry = null; groundTrack.Geometry = null;
         AltitudeChart = []; SpeedChart = []; MapTrack = []; Log.Clear(); logTimes.Clear(); countdownLogged.Clear();
-        LatestEvent = ""; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
+        LatestEvent = ""; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility)); HideCard();
         Notify(nameof(PlayText)); Notify(nameof(SpeedText)); Notify(nameof(AltitudeChart)); Notify(nameof(SpeedChart)); Notify(nameof(MapTrack));
         Update(0);
     }
