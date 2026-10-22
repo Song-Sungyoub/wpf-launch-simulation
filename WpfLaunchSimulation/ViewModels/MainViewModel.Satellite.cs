@@ -15,7 +15,7 @@ public sealed partial class MainViewModel
     private const double FineEnd = 1900, SunPointEnd = 2100;     // fine de-spin to rest, then slew to the Sun
     public const double FirstBeacon = 41 * 60 + 36;              // King Sejong Station (published)
     private static readonly Vector3D TumbleAxis = Normalized(new Vector3D(0.35, 0.8, 0.48));
-    private bool[] attitudeLogged = new bool[4];
+    private bool[] attitudeLogged = new bool[5];
 
     private static Vector3D Normalized(Vector3D v) { v.Normalize(); return v; }
 
@@ -77,6 +77,7 @@ public sealed partial class MainViewModel
             (FineEnd, "회전 속도 0.3°/s 이하 · 태양 지향 기동 시작", null),
             (SunPointEnd, "태양 지향 완료 · 태양전지판이 태양을 향함", "태양 지향"),
             (FirstBeacon, "남극 세종기지 첫 비콘 수신 (실제 41분 36초)", "첫 교신"),
+            (FirstBeacon + 60, "이후 일정 · 6/22 대전 지상국 양방향 교신 · 6/29~7/5 큐브위성 4기 사출 · 2024년 8월 임무 종료", "이후 일정"),
         ];
         for (int i = 0; i < phases.Length; i++)
         {
@@ -87,5 +88,5 @@ public sealed partial class MainViewModel
             if (phases[i].Card is { } card) ShowCardFor(card);
         }
     }
-    private void ResetSatellitePhases() => attitudeLogged = new bool[4];
+    private void ResetSatellitePhases() => attitudeLogged = new bool[5];
 }

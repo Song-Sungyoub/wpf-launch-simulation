@@ -195,6 +195,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         UpdateCamera(t, wall);
         UpdateSmoke(t);
         UpdateTelemetry(t);
+        UpdateAudio(t);
     }
 
     private void UpdateRocket(double t)
@@ -384,7 +385,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 double low = t > 0 ? Math.Clamp(1 - sim.Altitude / 8000, 0, 1) : 1;
                 // Aft view along the body; near the ground, blend toward a view defined in the local horizon frame
                 // (about 10° below the horizon) so the horizon and sky are in frame.
-                var aft = -y + x * 0.28; aft.Normalize();
+                // Above the atmosphere the vehicle flies nearly horizontally, so a straight aft view is all black sky;
+                // tilt it toward the Earth so the limb and the ground below the plume are in frame.
+                double space = Math.Clamp((sim.Altitude - 80e3) / 100e3, 0, 1);
+                var aft = -y + x * 0.28 - up * (0.3 * space); aft.Normalize();
                 var horizontal = x - up * Vector3D.DotProduct(x, up); horizontal.Normalize();
                 double dip = 10 * Math.PI / 180;
                 // Look tangent to the skin (along the body's side, toward the horizon) and slightly back toward it,

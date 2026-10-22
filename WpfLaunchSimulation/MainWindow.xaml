@@ -197,6 +197,7 @@
                         </WrapPanel>
                         <TextBlock Text="3인칭: 드래그로 회전, 휠로 거리 조절" FontSize="10" Foreground="#899BB5"/>
                         <CheckBox Content="설명 카드 표시" IsChecked="{Binding ShowCards}" Foreground="#E7EEF8" Margin="0,8,0,0"/>
+                        <CheckBox Content="소리 (합성음)" IsChecked="{Binding SoundOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource Panel}" Margin="0,0,0,10" Visibility="{Binding ManeuverVisibility}">
