@@ -393,6 +393,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 var horizonView = sideways * Math.Cos(dip) - up * Math.Sin(dip) - horizontal * 0.22;
                 horizonView.Normalize();
                 look = aft * (1 - low) + horizonView * low; fov = 62 + 8 * low; origin = eye; nearMeters = 0.2;
+                look.Normalize(); look = ApplyShake(look, x, t);
                 break;
             }
             case CameraMode.Globe:
