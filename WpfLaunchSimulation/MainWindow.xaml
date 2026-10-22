@@ -36,6 +36,10 @@
                     <ModelVisual3D Content="{Binding SkyScene}"/>
                 </Viewport3D>
                 <Viewport3D IsHitTestVisible="False">
+                    <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
+                    <ModelVisual3D Content="{Binding DomeScene}"/>
+                </Viewport3D>
+                <Viewport3D IsHitTestVisible="False">
                     <Viewport3D.Camera><PerspectiveCamera Position="{Binding CameraPosition}" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="{Binding FarNearPlane}" FarPlaneDistance="{Binding FarFarPlane}"/></Viewport3D.Camera>
                     <ModelVisual3D Content="{Binding FarScene}"/>
                 </Viewport3D>
@@ -94,6 +98,10 @@
                         <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
                             <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
                             <ModelVisual3D Content="{Binding SkyScene}"/>
+                        </Viewport3D>
+                        <Viewport3D IsHitTestVisible="False">
+                            <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
+                            <ModelVisual3D Content="{Binding DomeScene}"/>
                         </Viewport3D>
                         <Viewport3D IsHitTestVisible="False">
                             <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetFarNearPlane}" FarPlaneDistance="{Binding InsetFarFarPlane}"/></Viewport3D.Camera>

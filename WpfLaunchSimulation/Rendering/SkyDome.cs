@@ -12,13 +12,13 @@ public sealed class SkyDome
 {
     public Model3DGroup Root { get; } = new();
     private readonly AxisAngleRotation3D tilt = new(new Vector3D(1, 0, 0), 0);
-    private readonly GradientStop zenith = new(Colors.Transparent, 0), upper = new(Colors.Transparent, 0.36), horizon = new(Colors.Transparent, 0.5), below = new(Colors.Transparent, 1);
+    private readonly GradientStop zenith = new(Colors.Transparent, 0), upper = new(Colors.Transparent, 0.3), lower = new(Colors.Transparent, 0.45), horizon = new(Colors.Transparent, 0.5), below = new(Colors.Transparent, 1);
     private readonly MeshGeometry3D sunMesh = new();
     private readonly ImageBrush sunGlare;
 
     public SkyDome(Vector3D sunDirection)
     {
-        var gradient = new LinearGradientBrush(new GradientStopCollection([zenith, upper, horizon, below]), new Point(0, 0), new Point(0, 1));
+        var gradient = new LinearGradientBrush(new GradientStopCollection([zenith, upper, lower, horizon, below]), new Point(0, 0), new Point(0, 1));
         var domeMaterial = new MaterialGroup();
         domeMaterial.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
         domeMaterial.Children.Add(new EmissiveMaterial(gradient));
@@ -69,9 +69,12 @@ public sealed class SkyDome
         double haze = Math.Clamp(1 - altitudeKm / 25, 0, 1);            // pale horizon band near the ground
         Color Haze(Color c, double k) => Color.FromRgb((byte)(c.R + (225 - c.R) * k), (byte)(c.G + (236 - c.G) * k), (byte)(c.B + (245 - c.B) * k));
         Color WithAlpha(Color c, double a) => Color.FromArgb((byte)(255 * Math.Clamp(a, 0, 1)), c.R, c.G, c.B);
-        zenith.Color = WithAlpha(zenithColor, air);
-        upper.Color = WithAlpha(Haze(zenithColor, 0.25 * haze), air);
-        horizon.Color = WithAlpha(Haze(zenithColor, 0.75 * haze + 0.2), air);
+        // Zenith deeper than the reference colour, a broad lighter band toward the horizon, a pale haze line at it.
+        Color Deep(Color c) => Color.FromRgb((byte)(c.R * 0.55), (byte)(c.G * 0.68), (byte)(c.B * 0.9));
+        zenith.Color = WithAlpha(Deep(zenithColor), air);
+        upper.Color = WithAlpha(Haze(zenithColor, 0.12 * haze), air);
+        lower.Color = WithAlpha(Haze(zenithColor, 0.22 * haze + 0.04), air);
+        horizon.Color = WithAlpha(Haze(zenithColor, 0.55 * haze + 0.12), air);
         below.Color = WithAlpha(Haze(zenithColor, 0.6 * haze + 0.2), air);
         // Glare is strongest in the blue sky; in space the disc stays and the halo shrinks.
         sunGlare.Opacity = 0.85 + 0.15 * air;

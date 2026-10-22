@@ -29,6 +29,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     // Scenes: stars (camera at the origin), the far layer (Earth, paths) and the near layer (pad, rocket, debris).
     // Both world layers are drawn relative to a moving origin so metre-scale geometry stays precise.
     public Model3DGroup SkyScene { get; } = new();
+    // Sky dome and Sun: drawn at full opacity above the stars (the star layer fades out in daylight).
+    public Model3DGroup DomeScene { get; } = new();
     public Model3DGroup FarScene { get; } = new();
     public Model3DGroup NearScene { get; } = new();
     private readonly TranslateTransform3D farOrigin = new(), nearOrigin = new();
@@ -75,7 +77,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public MainViewModel()
     {
         SkyScene.Children.Add(StarField.Create());
-        skyDome = new SkyDome(SunDirection()); SkyScene.Children.Add(skyDome.Root);
+        skyDome = new SkyDome(SunDirection()); DomeScene.Children.Add(skyDome.Root);
         var sun = SunDirection();
         foreach (var scene in new[] { FarScene, NearScene })
         {
@@ -365,7 +367,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 var basePoint = SceneGeometry.Point(rocketBase);
                 double radius = sim.Stage == 1 ? NuriModel.Stage1Radius : NuriModel.UpperRadius;
                 eye = basePoint + y * ((top - 1.0) / R) + x * ((radius + 1.6) / R);
-                look = -y + x * 0.28; fov = 62; origin = eye; nearMeters = 0.2;
+                // Looking aft along the body. Just after liftoff the ground fills that view, so tilt toward the horizon
+                // and blend back to the aft view by ~8 km.
+                double low = t > 0 ? Math.Clamp(1 - sim.Altitude / 8000, 0, 1) : 1;
+                // Aft view along the body; near the ground, blend toward a view defined in the local horizon frame
+                // (about 10° below the horizon) so the horizon and sky are in frame.
+                var aft = -y + x * 0.28; aft.Normalize();
+                var horizontal = x - up * Vector3D.DotProduct(x, up); horizontal.Normalize();
+                double dip = 10 * Math.PI / 180;
+                var horizonView = horizontal * Math.Cos(dip) - up * Math.Sin(dip);
+                look = aft * (1 - low) + horizonView * low; fov = 62 + 8 * low; origin = eye; nearMeters = 0.2;
                 break;
             }
             case CameraMode.Globe:
@@ -444,6 +455,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     // Daylight sky by camera altitude (Rayleigh-blue near the ground, deep blue in the stratosphere, black above
     // ~100 km), scaled by how high the Sun is at the camera. Illustrative colours.
     public Brush SkyBrush { get; private set; } = Brushes.Black;
+    private static readonly Brush SpaceBrush = CreateSpaceBrush();
+    private static Brush CreateSpaceBrush() { var b = new SolidColorBrush(Color.FromRgb(3, 5, 12)); b.Freeze(); return b; }
     public double StarOpacity { get; private set; } = 1;
     private static readonly (double AltitudeKm, Color Color)[] SkyStops =
         [(0, Color.FromRgb(118, 174, 228)), (8, Color.FromRgb(78, 132, 212)), (20, Color.FromRgb(36, 66, 150)), (40, Color.FromRgb(14, 24, 70)), (70, Color.FromRgb(5, 8, 22)), (100, Color.FromRgb(3, 5, 12))];
@@ -456,7 +469,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         Color a = SkyStops[k].Color, b = SkyStops[k + 1].Color, night = SkyStops[^1].Color;
         byte Mix(byte x, byte y, byte n) => (byte)(n + ((x + (y - x) * f) - n) * day);
         var brush = new SolidColorBrush(Color.FromRgb(Mix(a.R, b.R, night.R), Mix(a.G, b.G, night.G), Mix(a.B, b.B, night.B))); brush.Freeze();
-        SkyBrush = brush; StarOpacity = 1 - day * Math.Clamp(1 - km / 60, 0, 1);
+        // Emissive materials blend additively, so the background stays dark and the dome supplies the sky colour.
+        SkyBrush = SpaceBrush; StarOpacity = 1 - day * Math.Clamp(1 - km / 60, 0, 1);
         skyDome.Update(up, day, km, brush.Color);
         Notify(nameof(SkyBrush)); Notify(nameof(StarOpacity));
         limbGlow.Update(eye);
