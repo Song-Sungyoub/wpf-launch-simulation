@@ -44,7 +44,7 @@ public sealed class NuriModel
         foreach (var part in EngineParts(0, 0, 0.5, engine, chamber, top: Stage2Top)) Stage3.Children.Add(part);
         Stage3.Children.Add(Skin(Stage2Top, Stage3Top, UpperRadius, NuriTextures.Stage3.Value));
         // Payload (gold box) inside the fairing.
-        Payload.Children.Add(Box(0, Stage3Top + 0.9, 0, 0.9, 0.9, 0.9, Gold));
+        Payload.Children.Add(new SatelliteModel().Root); // stowed satellite inside the fairing
         // Fairing halves: textured cylinder + ogive nose, split along the X axis.
         double[] noseY = [44.2, 45.3, 46.2, 46.8, FairingTop];
         double[] noseR = [UpperRadius, 1.18, 0.86, 0.5, 0.1];

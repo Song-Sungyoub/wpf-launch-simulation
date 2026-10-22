@@ -36,7 +36,7 @@ public partial class MainWindow : Window
         System.Windows.Controls.Canvas.SetTop(track, 36); canvas.Children.Add(track);
         timelineProgress = new System.Windows.Shapes.Rectangle { Height = 4, Fill = new SolidColorBrush(Color.FromRgb(101, 222, 224)), RadiusX = 2, RadiusY = 2 };
         System.Windows.Controls.Canvas.SetTop(timelineProgress, 36); canvas.Children.Add(timelineProgress);
-        double previousRight = double.NegativeInfinity; double previousTop = 17;
+        double[] rowTops = [17, 2, -13]; var rowRight = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
         foreach (var mark in viewModel.TimelineMarks)
         {
             double x = MainViewModel.TimelineFraction(mark.Time) * w;
@@ -52,9 +52,10 @@ public partial class MainWindow : Window
             button.Template = TimelineButtonTemplate;
             button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double left = Math.Clamp(x - button.DesiredSize.Width / 2, 0, Math.Max(0, w - button.DesiredSize.Width));
-            double top = left < previousRight + 2 ? (previousTop == 17 ? 2 : 17) : 17;
+            int row = 0; while (row < rowTops.Length - 1 && left < rowRight[row] + 2) row++;
+            double top = rowTops[row];
             System.Windows.Controls.Canvas.SetLeft(button, left); System.Windows.Controls.Canvas.SetTop(button, top); canvas.Children.Add(button);
-            previousRight = left + button.DesiredSize.Width; previousTop = top;
+            rowRight[row] = left + button.DesiredSize.Width;
         }
     }
     private static readonly System.Windows.Controls.ControlTemplate TimelineButtonTemplate = CreateTimelineButtonTemplate();

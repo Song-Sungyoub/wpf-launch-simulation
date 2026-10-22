@@ -43,6 +43,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly NuriModel rocket = new();
     private readonly DirectionalLight fillLight = new(Color.FromRgb(64, 64, 70), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
+    private SatelliteModel? satelliteModel;
+    private bool panelStartLogged, panelDoneLogged;
+    private void UpdatePanels(double t)
+    {
+        double f = (t - NuriFlight2.PanelDeployStart) / NuriFlight2.PanelDeployDuration;
+        satelliteModel!.SetDeployment(f);
+        if (f >= 0 && !panelStartLogged)
+        {
+            panelStartLogged = true; AddLog(NuriFlight2.PanelDeployStart, "태양전지판 전개 시작 (시각·형상은 교육용 예시)");
+            LatestEvent = "태양전지판 전개"; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility)); ShowCardFor("태양전지판");
+        }
+        if (f >= 1 && !panelDoneLogged) { panelDoneLogged = true; AddLog(NuriFlight2.PanelDeployStart + NuriFlight2.PanelDeployDuration, "태양전지판 전개 완료"); }
+    }
     private readonly CloudLayer clouds = new();
     private readonly SkyDome skyDome;
     private readonly EarthEffects.LimbGlow limbGlow = new();
@@ -153,6 +166,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         missionTime = CountdownStart; playing = false; speed = 1;
         rocket.Root.Children.Clear();
         foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
+        satelliteModel = null; panelStartLogged = panelDoneLogged = false;
         pendingBurn = null; deltaVUsed = 0; previousOrbitPoints = []; previousOrbit.Geometry = null;
         nearDebris.Children.Clear(); debrisModels.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
@@ -246,13 +260,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         {
             if (!debrisModels.TryGetValue(piece, out var entry))
             {
-                var model = piece.Kind switch { 3 => NuriModel.FairingHalf(debrisModels.Keys.Count(k => k.Kind == 3) == 0), 4 or 5 => NuriModel.SpentStage(4), _ => NuriModel.SpentStage(piece.Kind) };
+                Model3DGroup model;
+                if (piece.Kind == 4) { satelliteModel = new SatelliteModel(); model = new Model3DGroup(); model.Children.Add(satelliteModel.Root); }
+                else if (piece.Kind == 5)
+                {
+                    // Mass simulator: plain aluminium block on its adapter (≈1.3 t).
+                    model = new Model3DGroup();
+                    model.Children.Add(NuriModel.Box(0, NuriModel.Stage3Top + 0.7, 0, 1.3, 1.1, 1.3, NuriModel.Lit(Color.FromRgb(178, 182, 188))));
+                }
+                else model = piece.Kind == 3 ? NuriModel.FairingHalf(debrisModels.Keys.Count(k => k.Kind == 3) == 0) : NuriModel.SpentStage(piece.Kind);
                 var pose = new MatrixTransform3D(); model.Transform = pose;
                 entry = (model, pose); debrisModels[piece] = entry; nearDebris.Children.Add(model);
             }
             // Tumble about an axis across the body; parts start aligned with the rocket.
             var axis = (rocketAxis * Math.Cos(piece.Tumble) + Vec.Cross(rocketAxis, piece.Position.Unit).Unit * Math.Sin(piece.Tumble)).Unit;
             entry.Pose.Matrix = Pose(piece.Position, piece.Kind <= 3 ? axis : rocketAxis, 1);
+            if (piece.Kind == 4 && satelliteModel is not null) UpdatePanels(sim.Time);
             if (piece.Landed && reportedLandings.Add(piece) && piece.Kind <= 3)
             {
                 double km = Earth.SurfaceDistance(sim.PadFixed, Earth.InertialToFixed(piece.Position, piece.LandedTime)) / 1000;
