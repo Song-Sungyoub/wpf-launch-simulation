@@ -9,7 +9,7 @@ namespace WpfLaunchSimulation.ViewModels;
 // The shake is a function of simulation time only, so pause, jumps and replays look the same.
 public sealed partial class MainViewModel
 {
-    private const double QReference = 30e3;    // Pa, roughly the flight's Max-Q
+    private const double QReference = 50e3;    // Pa, about the simulated Max-Q (50.4 kPa)
 
     // Angular shake amplitude in degrees.
     private double ShakeAmplitudeDeg(double t)

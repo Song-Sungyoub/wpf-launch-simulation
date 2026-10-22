@@ -413,9 +413,18 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 double dist = (Satellite is not null ? chaseDistance * 0.12 : sim.Stage == 3 ? chaseDistance * 1.6 : chaseDistance) / R;
                 var offset = behind * Math.Cos(orbitYaw) + side * Math.Sin(orbitYaw);
                 offset = offset * Math.Cos(orbitPitch) + up * Math.Sin(orbitPitch); offset.Normalize();
-                if (t <= 0) offset = side * Math.Cos(orbitYaw) + up * 0.15 + (Vector3D)SceneGeometry.Direction(Vec.Cross(new Vec(0, 0, 1), rocketBase)) * Math.Sin(orbitYaw);
+                var padOffset = side * Math.Cos(orbitYaw) + up * 0.15 + (Vector3D)SceneGeometry.Direction(Vec.Cross(new Vec(0, 0, 1), rocketBase)) * Math.Sin(orbitYaw);
+                padOffset.Normalize();
+                // "Behind" a rising vehicle points into the ground, so blend from the pad-side view to the trailing view
+                // over the first few km.
+                double low = Satellite is null && t > 0 ? Math.Clamp(1 - sim.Altitude / 3000, 0, 1) : 0;
+                if (t <= 0) offset = padOffset; else if (low > 0) offset = offset * (1 - low) + padOffset * low;
                 offset.Normalize();
-                eye = center + offset * dist; look = center - eye; fov = 40; nearMeters = 1;
+                eye = center + offset * dist;
+                // Never below the ground (or inside the pad deck).
+                double eyeHeight = ((Vector3D)eye).Length * R - sim.PadFixed.Length;
+                if (Satellite is null && eyeHeight < 15) eye += up * ((15 - eyeHeight) / R);
+                look = center - eye; fov = 40; nearMeters = 1;
                 break;
             }
         }
@@ -620,7 +629,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var orbit = (focusOrbit.PerigeeKm, focusOrbit.ApogeeKm, focusOrbit.InclinationDeg);
         UpdateManeuverStatus();
         OrbitText = flying && sim.Altitude > 100e3
-            ? (double.IsFinite(orbit.PerigeeKm) ? $"근지점 {orbit.PerigeeKm:N0} km · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°" : "탈출 궤도")
+            ? (!double.IsFinite(orbit.PerigeeKm) ? "탈출 궤도"
+                // A perigee below ~100 km (negative: inside the Earth) means the path still falls back; not an orbit yet.
+                : orbit.PerigeeKm < 100 ? $"아직 궤도 아님 (준궤도) · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°"
+                : $"근지점 {orbit.PerigeeKm:N0} km · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°")
             : "목표: 700 km 태양동기궤도 · 경사각 98.2°";
         var fixedPos = flying ? sim.FixedPosition : sim.PadFixed; var geo = Earth.Geodetic(fixedPos);
         RocketMapPoint = MapPoint(geo.Latitude, geo.Longitude);
