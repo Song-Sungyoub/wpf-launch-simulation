@@ -173,7 +173,7 @@ public static class PadSurroundings
     private static double Smooth(double a, double b, double x) { double t = Math.Clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
 
     // Value-noise fBm in 0..1.
-    private static double Fbm(double x, double y, int octaves)
+    internal static double Fbm(double x, double y, int octaves)
     {
         double sum = 0, amp = 0.5, norm = 0;
         for (int o = 0; o < octaves; o++) { sum += amp * Value(x, y); norm += amp; x *= 2.03; y *= 2.03; amp *= 0.5; }

@@ -12,13 +12,15 @@ public sealed class SkyDome
 {
     public Model3DGroup Root { get; } = new();
     private readonly AxisAngleRotation3D tilt = new(new Vector3D(1, 0, 0), 0);
-    private readonly GradientStop zenith = new(Colors.Transparent, 0), upper = new(Colors.Transparent, 0.3), lower = new(Colors.Transparent, 0.45), horizon = new(Colors.Transparent, 0.5), below = new(Colors.Transparent, 1);
+    // v = 0 zenith, 0.5 horizon: stops at ~50°, ~25°, ~8° elevation so the colour changes most near the horizon.
+    private readonly GradientStop zenith = new(Colors.Transparent, 0), high = new(Colors.Transparent, 0.22), upper = new(Colors.Transparent, 0.36), lower = new(Colors.Transparent, 0.455), horizon = new(Colors.Transparent, 0.5), below = new(Colors.Transparent, 1);
     private readonly MeshGeometry3D sunMesh = new();
     private readonly ImageBrush sunGlare;
+    private readonly ImageBrush aureole;
 
     public SkyDome(Vector3D sunDirection)
     {
-        var gradient = new LinearGradientBrush(new GradientStopCollection([zenith, upper, lower, horizon, below]), new Point(0, 0), new Point(0, 1));
+        var gradient = new LinearGradientBrush(new GradientStopCollection([zenith, high, upper, lower, horizon, below]), new Point(0, 0), new Point(0, 1));
         var domeMaterial = new MaterialGroup();
         domeMaterial.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
         domeMaterial.Children.Add(new EmissiveMaterial(gradient));
@@ -39,6 +41,35 @@ public sealed class SkyDome
         sunMaterial.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
         sunMaterial.Children.Add(new EmissiveMaterial(sunGlare));
         Root.Children.Add(new GeometryModel3D(sunMesh, sunMaterial) { BackMaterial = sunMaterial });
+        // Aureole: forward scattering brightens a broad patch of sky around the Sun (~35° radius). Closer than the
+        // dome so its corners stay inside it.
+        var ac = (Point3D)(sunDirection * 300); double asz = 210;
+        var aureoleMesh = new MeshGeometry3D
+        {
+            Positions = new Point3DCollection([ac - a * asz + b * asz, ac + a * asz + b * asz, ac + a * asz - b * asz, ac - a * asz - b * asz]),
+            TextureCoordinates = new PointCollection([new(0, 0), new(1, 0), new(1, 1), new(0, 1)]),
+            TriangleIndices = new Int32Collection([0, 2, 1, 0, 3, 2]),
+        };
+        aureole = new ImageBrush(AureoleTexture());
+        var aureoleMaterial = new MaterialGroup();
+        aureoleMaterial.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
+        aureoleMaterial.Children.Add(new EmissiveMaterial(aureole));
+        Root.Children.Insert(1, new GeometryModel3D(aureoleMesh, aureoleMaterial) { BackMaterial = aureoleMaterial });
+    }
+
+    private static BitmapSource AureoleTexture()
+    {
+        const int size = 256; var pixels = new byte[size * size * 4];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                double dx = (x + 0.5) / size * 2 - 1, dy = (y + 0.5) / size * 2 - 1, r = Math.Sqrt(dx * dx + dy * dy);
+                double a = Math.Clamp(0.15 * Math.Exp(-r / 0.2) + 0.05 * Math.Exp(-r / 0.5), 0, 1) * Math.Clamp((1 - r) / 0.25, 0, 1);
+                int p = (y * size + x) * 4;
+                pixels[p] = (byte)(225 * a); pixels[p + 1] = (byte)(242 * a); pixels[p + 2] = (byte)(255 * a); pixels[p + 3] = (byte)(255 * a);
+            }
+        var bitmap = BitmapSource.Create(size, size, 96, 96, PixelFormats.Pbgra32, null, pixels, size * 4); bitmap.Freeze();
+        return bitmap;
     }
 
     private static BitmapSource SunTexture()
@@ -70,13 +101,16 @@ public sealed class SkyDome
         Color Haze(Color c, double k) => Color.FromRgb((byte)(c.R + (225 - c.R) * k), (byte)(c.G + (236 - c.G) * k), (byte)(c.B + (245 - c.B) * k));
         Color WithAlpha(Color c, double a) => Color.FromArgb((byte)(255 * Math.Clamp(a, 0, 1)), c.R, c.G, c.B);
         // Zenith deeper than the reference colour, a broad lighter band toward the horizon, a pale haze line at it.
-        Color Deep(Color c) => Color.FromRgb((byte)(c.R * 0.55), (byte)(c.G * 0.68), (byte)(c.B * 0.9));
+        Color Mix(Color x, Color y, double k) => Color.FromRgb((byte)(x.R + (y.R - x.R) * k), (byte)(x.G + (y.G - x.G) * k), (byte)(x.B + (y.B - x.B) * k));
+        Color Deep(Color c) => Color.FromRgb((byte)(c.R * 0.42), (byte)(c.G * 0.6), (byte)(c.B * 0.88));
         zenith.Color = WithAlpha(Deep(zenithColor), air);
-        upper.Color = WithAlpha(Haze(zenithColor, 0.12 * haze), air);
-        lower.Color = WithAlpha(Haze(zenithColor, 0.22 * haze + 0.04), air);
+        high.Color = WithAlpha(Mix(Deep(zenithColor), zenithColor, 0.6), air);
+        upper.Color = WithAlpha(Haze(zenithColor, 0.14 * haze), air);
+        lower.Color = WithAlpha(Haze(zenithColor, 0.34 * haze + 0.04), air);
         horizon.Color = WithAlpha(Haze(zenithColor, 0.55 * haze + 0.12), air);
         below.Color = WithAlpha(Haze(zenithColor, 0.6 * haze + 0.2), air);
         // Glare is strongest in the blue sky; in space the disc stays and the halo shrinks.
         sunGlare.Opacity = 0.85 + 0.15 * air;
+        aureole.Opacity = air;
     }
 }

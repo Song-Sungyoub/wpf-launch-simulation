@@ -122,6 +122,8 @@ public sealed class LaunchSmoke
         var puff = puffs[i];
         double travel = puff.Speed * 6 * (1 - Math.Exp(-age / 6)), radius = Radius(i, age);
         var origin = puff.Duct ? new Point3D(0, 2, 40) : new Point3D(0, 1, 0);
-        return origin + puff.Direction * travel + new Vector3D(0, radius * 0.45 + puff.Rise * age, 0);
+        // Centres sit high enough that the visible part of each puff stays above the deck; a billboard cutting into the
+        // ground shows a hard straight edge.
+        return origin + puff.Direction * travel + new Vector3D(0, radius * 0.75 + puff.Rise * age, 0);
     }
 }

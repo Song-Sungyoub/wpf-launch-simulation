@@ -100,6 +100,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var patchMaterial = new DiffuseMaterial(new ImageBrush(areaImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
         farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
             (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9)));
+        // Local clouds go here (set below, once the pad frame exists): after the opaque ground, before the night-light and
+        // global-cloud shells (~2.5 and ~10 km up), which write depth even where transparent and would hide clouds below them.
+        int localCloudSlot = farEarthFixed.Children.Count;
         farEarthFixed.Children.Add(EarthEffects.NightLights(new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/earth-night.jpg"), Earth.FixedPosition(23.44, 74.6, 0).Unit));
         farEarthFixed.Children.Add(SceneGeometry.Clouds());
         groundTrack.BackMaterial = groundTrack.Material; groundTrackHost.Children.Add(groundTrack);
@@ -110,7 +113,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var markerTransform = new Transform3DGroup(); markerTransform.Children.Add(markerScale); markerTransform.Children.Add(markerPosition);
         marker.Transform = markerTransform; farInertial.Children.Add(marker);
         var farRoot = new Model3DGroup { Transform = farOrigin };
-        farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farInertial); farRoot.Children.Add(limbGlow.Model);
+        // Atmosphere shells first: seen from inside they lie behind everything, and drawn later their depth would cut
+        // the transparent corners of the local cloud billboards into visible rectangles.
+        farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(farInertial); farRoot.Children.Add(limbGlow.Model);
         FarScene.Children.Add(farRoot);
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
         padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
@@ -126,9 +131,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         NearScene.Children.Add(nearRoot);
         nearDebris = new Model3DGroup(); nearRoot.Children.Add(nearDebris);
         // Translucent smoke last: WPF writes depth for transparent pixels, so anything drawn after it would be hidden.
-        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(clouds.Root); smokeFrame.Children.Add(smoke.Root);
+        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(smoke.Root);
         var smokeEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) }; smokeEarthFixed.Children.Add(smokeFrame);
         nearRoot.Children.Add(smokeEarthFixed);
+        var cloudFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; cloudFrame.Children.Add(clouds.Root);
+        farEarthFixed.Children.Insert(localCloudSlot, cloudFrame);
 
         StartCommand = new ActionCommand(() => { playing = !playing; Notify(nameof(PlayText)); });
         SkipCountdownCommand = new ActionCommand(() => { if (missionTime < -15) missionTime = -15; });
@@ -668,7 +675,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     }
     public static string Clock(double t)
     {
-        var span = TimeSpan.FromSeconds(Math.Abs(t));
+        // Counting down, show whole seconds remaining (T−5.4 s reads T−6, like the big countdown digit).
+        var span = TimeSpan.FromSeconds(t < 0 ? Math.Ceiling(-t) : t);
         return $"T{(t < 0 ? "−" : "+")}{(int)span.TotalHours:00}:{span.Minutes:00}:{span.Seconds:00}";
     }
 
