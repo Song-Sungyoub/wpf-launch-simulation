@@ -40,19 +40,23 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly GeometryModel3D orbitPath = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(90, 220, 255)) };
     private readonly GeometryModel3D groundTrack = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 255, 150)) };
     private readonly ScaleTransform3D markerScale = new(); private readonly TranslateTransform3D markerPosition = new();
+    private readonly MatrixTransform3D markerFacing = new();
     private readonly NuriModel rocket = new();
     private readonly DirectionalLight fillLight = new(Color.FromRgb(26, 26, 30), new Vector3D(0, 0, -1));
     private readonly LaunchSmoke smoke = new();
+    private readonly PadUmbilicals umbilicals = new();
     private SatelliteModel? satelliteModel;
     private readonly CloudLayer clouds = new();
     private readonly PadShadows.Rocket rocketShadow = new();
     private Vector3D padSun;
     private readonly SkyDome skyDome;
     private readonly EarthEffects.LimbGlow limbGlow = new();
+    private readonly SceneGeometry.AtmosphereShells atmosphere = new();
     private Matrix3D padFrame;
     // Smoke billboards need the camera in pad-local metres: invert pad frame → Earth rotation → moving origin.
     private void UpdateSmoke(double t)
     {
+        umbilicals.Update(t);
         var world = padFrame;
         world.Append(new RotateTransform3D(earthAngle).Value);
         world.Append(nearOrigin.Value);
@@ -66,19 +70,43 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var padEye = world.Transform(eye); var padRight = world.Transform(right);
         smoke.Update(t, padEye, padRight, world.Transform(up));
         clouds.Update(padEye, padRight);
+        if (InsetVisibility == Visibility.Visible)
+        {
+            var insetRight = Vector3D.CrossProduct(InsetLookDirection, InsetUpDirection);
+            var insetUp = Vector3D.CrossProduct(insetRight, InsetLookDirection);
+            var insetEye = world.Transform(new Point3D(InsetCameraPosition.X * R, InsetCameraPosition.Y * R, InsetCameraPosition.Z * R));
+            insetSmoke.Update(t, insetEye, world.Transform(insetRight), world.Transform(insetUp));
+            insetClouds.Update(insetEye, world.Transform(insetRight));
+        }
         var basePoint = SceneGeometry.Point(rocketBase);
         var padBase = world.Transform(new Point3D((basePoint.X + nearOrigin.OffsetX) * R, (basePoint.Y + nearOrigin.OffsetY) * R, (basePoint.Z + nearOrigin.OffsetZ) * R));
         rocketShadow.Update(padBase, NuriModel.FairingTop, NuriModel.Stage1Radius, padSun);
     }
     private readonly MatrixTransform3D rocketPose = new();
+    // Poses are kept in double and rebased onto the camera origin each frame: WPF composes
+    // transforms in single precision, and a large pose plus a large origin shift jitters.
+    private Matrix3D rocketWorld;
+    private readonly Dictionary<MatrixTransform3D, Matrix3D> rebased = [];
+    private readonly MatrixTransform3D padPose = new(), smokePose = new(), insetSmokePose = new();
+    private void Rebase(Point3D origin)
+    {
+        var shift = new Matrix3D(); shift.Translate(new Vector3D(-origin.X, -origin.Y, -origin.Z));
+        var earthFixed = padFrame * new RotateTransform3D(earthAngle).Value * shift;
+        padPose.Matrix = smokePose.Matrix = insetSmokePose.Matrix = earthFixed;
+        rocketPose.Matrix = rocketWorld * shift;
+        foreach (var (transform, world) in rebased) transform.Matrix = world * shift;
+    }
     private readonly Dictionary<Debris, (Model3DGroup Model, MatrixTransform3D Pose)> debrisModels = [];
     private readonly HashSet<Debris> reportedLandings = [];
     private readonly List<Point3D> pathPoints = [], trackPoints = [];
     private double lastSample = double.NegativeInfinity, lastRibbon = double.NegativeInfinity, ribbonWidth;
+    private int ribbonPointCount = -1;
+    private bool ribbonOverview;
 
     private AscentSimulator sim = new();
     private double missionTime = CountdownStart, speed = 1;
-    private bool playing;
+    private bool playing, displayDirty = true;
+    private double renderedTime = double.NaN;
 
     public MainViewModel()
     {
@@ -102,9 +130,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         // Brushes map UVs relative to the mesh's own UV range by default; use absolute 0..1 texture space.
         var areaImage = new BitmapImage();
         areaImage.BeginInit(); areaImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/naro-area.jpg"); areaImage.EndInit(); areaImage.Freeze();
-        var patchMaterial = new DiffuseMaterial(new ImageBrush(areaImage) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
-        farEarthFixed.Children.Add(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
-            (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9)));
+        var patchMaterial = new DiffuseMaterial(new ImageBrush(FeatheredPatch(areaImage, 45, 78)) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
+        // Stored pad-relative so float rounding does not make the ground shimmer.
+        padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
+        farEarthFixed.Children.Add(Localize(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
+            (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9)), padFrame));
         // Local clouds go here (set below, once the pad frame exists): after the opaque ground, before the night-light and
         // global-cloud shells (~2.5 and ~10 km up), which write depth even where transparent and would hide clouds below them.
         int localCloudSlot = farEarthFixed.Children.Count;
@@ -114,17 +144,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         farEarthFixed.Children.Add(groundTrackHost); farEarthFixed.Children.Add(landingHost);
         flightPath.BackMaterial = flightPath.Material; orbitPath.BackMaterial = orbitPath.Material;
         farInertial.Children.Add(flightPath); farInertial.Children.Add(orbitPath);
-        var marker = SceneGeometry.Sphere(1, SceneGeometry.MarkerMaterial(Color.FromRgb(255, 240, 200)), 16, 8);
-        var markerTransform = new Transform3DGroup(); markerTransform.Children.Add(markerScale); markerTransform.Children.Add(markerPosition);
+        var marker = new Model3DGroup();
+        var markerMaterial = SceneGeometry.MarkerMaterial(Color.FromRgb(255, 220, 105));
+        for (int i = 0; i < 12; i++)
+        {
+            double angle = i * Math.PI * 2 / 12;
+            var dot = SceneGeometry.Sphere(0.13, markerMaterial, 8, 6);
+            dot.Transform = new TranslateTransform3D(Math.Cos(angle), Math.Sin(angle), 0);
+            dot.Freeze(); marker.Children.Add(dot);
+        }
+        var markerTransform = new Transform3DGroup(); markerTransform.Children.Add(markerScale); markerTransform.Children.Add(markerFacing); markerTransform.Children.Add(markerPosition);
         marker.Transform = markerTransform; farInertial.Children.Add(marker);
         var farRoot = new Model3DGroup { Transform = farOrigin };
         // Atmosphere shells first: seen from inside they lie behind everything, and drawn later their depth would cut
         // the transparent corners of the local cloud billboards into visible rectangles.
-        farRoot.Children.Add(SceneGeometry.Atmosphere()); farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(farInertial); farRoot.Children.Add(limbGlow.Model);
+        farRoot.Children.Add(atmosphere.Model); farRoot.Children.Add(farEarthFixed); farRoot.Children.Add(farInertial); farRoot.Children.Add(limbGlow.Model);
         FarScene.Children.Add(farRoot);
         // Near layer: the pad rides on the Earth rotation; the rocket and debris are inertial.
-        padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
-        var pad = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) };
+        var pad = new Model3DGroup { Transform = padPose };
         // Sun direction in pad-local axes (east, up, south rows of the pad frame) for the cast shadows.
         Vector3D Row(double x, double y, double z) { var v = new Vector3D(x, y, z); v.Normalize(); return v; }
         padSun = new Vector3D(Vector3D.DotProduct(sun, Row(padFrame.M11, padFrame.M12, padFrame.M13)),
@@ -132,29 +169,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         // A plain copy of the pad casts the shadows; they are painted into the apron and deck of the one shown.
         var surfaces = PadShadows.Surfaces(PadModel.Create(), padSun, rocketShadow.Drawing);
         pad.Children.Add(PadModel.Create(surfaces.Apron, surfaces.Deck));
+        pad.Children.Add(umbilicals.Root);
         pad.Children.Add(PadSurroundings.Terrain(areaImage, (NuriFlight2.PadLatitude - 0.75, NuriFlight2.PadLatitude + 0.75, NuriFlight2.PadLongitude - 0.9, NuriFlight2.PadLongitude + 0.9),
             NuriFlight2.PadLatitude, NuriFlight2.PadLongitude));
         // Skylight: a cool light from straight above the pad, so upward faces are lighter than the shaded sides.
         NearScene.Children.Insert(1, new DirectionalLight(Color.FromRgb(44, 52, 70), -Row(padFrame.M21, padFrame.M22, padFrame.M23)));
-        var nearEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) };
+        var nearEarthFixed = new Model3DGroup();
         nearEarthFixed.Children.Add(pad);
         rocket.Root.Transform = rocketPose;
-        var nearRoot = new Model3DGroup { Transform = nearOrigin };
+        var nearRoot = new Model3DGroup();
         nearRoot.Children.Add(nearEarthFixed); nearRoot.Children.Add(rocket.Root);
         NearScene.Children.Add(nearRoot);
         nearDebris = new Model3DGroup(); nearRoot.Children.Add(nearDebris);
         // Translucent smoke last: WPF writes depth for transparent pixels, so anything drawn after it would be hidden.
-        var smokeFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; smokeFrame.Children.Add(smoke.Root);
-        var smokeEarthFixed = new Model3DGroup { Transform = new RotateTransform3D(earthAngle) }; smokeEarthFixed.Children.Add(smokeFrame);
+        var smokeFrame = new Model3DGroup { Transform = smokePose }; smokeFrame.Children.Add(smoke.Root);
+        var smokeEarthFixed = new Model3DGroup(); smokeEarthFixed.Children.Add(smokeFrame);
         nearRoot.Children.Add(smokeEarthFixed);
         var cloudFrame = new Model3DGroup { Transform = new MatrixTransform3D(padFrame) }; cloudFrame.Children.Add(clouds.Root);
         farEarthFixed.Children.Insert(localCloudSlot, cloudFrame);
+        InitializeViewScenes(nearRoot, nearEarthFixed, smokeEarthFixed, farRoot, cloudFrame);
 
-        StartCommand = new ActionCommand(() => { playing = !playing; Notify(nameof(PlayText)); });
+        StartCommand = new ActionCommand(() => { playing = !playing; displayDirty = true; Notify(nameof(PlayText)); });
         SkipCountdownCommand = new ActionCommand(() => { if (missionTime < -15) missionTime = -15; });
         ResetCommand = new ActionCommand(Reset);
         SpeedCommand = new ActionCommand(p => { if (double.TryParse(p as string, out var v)) { speed = v; Notify(nameof(SpeedText)); } });
-        CameraCommand = new ActionCommand(p => { if (Enum.TryParse<CameraMode>(p as string, out var m)) { cameraMode = m; Notify(nameof(CameraText)); } });
+        CameraCommand = new ActionCommand(p => { if (Enum.TryParse<CameraMode>(p as string, out var m)) { cameraMode = m; displayDirty = true; Notify(nameof(CameraText)); } });
         sim.EventRaised += OnFlightEvent;
         InitializeManeuvers();
         Update(0);
@@ -173,15 +212,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         sim.EventRaised -= OnFlightEvent;
         sim = new AscentSimulator(); sim.EventRaised += OnFlightEvent;
-        missionTime = CountdownStart; playing = false; speed = 1;
+        missionTime = CountdownStart; playing = false; speed = 1; displayDirty = true;
         rocket.Root.Children.Clear();
-        foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
+        foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.MassSimulator, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
         satelliteModel = null; ResetSatellitePhases();
         pendingBurn = null; deltaVUsed = 0; previousOrbitPoints = []; previousOrbit.Geometry = null;
-        nearDebris.Children.Clear(); debrisModels.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
+        nearDebris.Children.Clear(); debrisModels.Clear(); rebased.Clear(); reportedLandings.Clear(); landingHost.Children.Clear();
         pathPoints.Clear(); trackPoints.Clear(); lastSample = double.NegativeInfinity; lastRibbon = double.NegativeInfinity;
         flightPath.Geometry = null; orbitPath.Geometry = null; groundTrack.Geometry = null;
-        AltitudeChart = []; SpeedChart = []; MapTrack = []; Log.Clear(); logTimes.Clear(); countdownLogged.Clear();
+        AltitudeChart = []; SpeedChart = []; MapTrack = []; ResetDisplayHistory(); Log.Clear(); logTimes.Clear(); countdownLogged.Clear();
         LatestEvent = ""; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility)); HideCard();
         Notify(nameof(PlayText)); Notify(nameof(SpeedText)); Notify(nameof(AltitudeChart)); Notify(nameof(SpeedChart)); Notify(nameof(MapTrack));
         Update(0);
@@ -194,9 +233,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         double dt = double.IsNaN(lastWall) ? 0 : Math.Clamp(wallSeconds - lastWall, 0, 0.1);
         lastWall = wallSeconds;
         if (playing && missionTime < NuriFlight2.FlightEnd + 3 * 3600) missionTime += dt * speed;
-        if (pendingBurn is double burnAt && missionTime >= burnAt) ExecuteAutoBurn();
-        if (missionTime > 0) sim.Advance(missionTime);
-        Update(wallSeconds);
+        if (missionTime > 0) AdvanceMission(missionTime);
+        if (displayDirty || missionTime != renderedTime)
+        {
+            Update(wallSeconds); renderedTime = missionTime; displayDirty = false;
+        }
         UpdateCard();
     }
 
@@ -213,10 +254,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         earthAngle.Angle = Earth.OmegaRadPerSecond * t * 180 / Math.PI;
         UpdateRocket(t);
         UpdateDebris();
-        if (t > 0 && t - lastSample >= 2) SampleTrack(t);
+
         UpdateCamera(t, wall);
         UpdateSmoke(t);
-        UpdateTelemetry(t);
+        UpdateTelemetry(t, wall);
         UpdateAudio(t);
     }
 
@@ -233,30 +274,31 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             axis = sim.EngineBurning || sim.Time < NuriFlight2.PitchKickStart ? sim.ThrustDirection : sim.Velocity.Unit;
         }
         rocketBase = position; rocketAxis = axis;
-        rocketPose.Matrix = Pose(position, axis, 1.0);
+        rocketWorld = Pose(position, axis, 1.0);
         SetPart(rocket.Stage1, sim.Stage == 1);
         SetPart(rocket.Stage2, sim.Stage <= 2);
         SetPart(rocket.FairingLeft, sim.FairingAttached); SetPart(rocket.FairingRight, sim.FairingAttached);
         SetPart(rocket.Payload, sim.PayloadAttached);
+        SetPart(rocket.MassSimulator, sim.DummyAttached);
         // Plumes: ignition from T−4 s, then the burning stage; length grows as ambient pressure falls.
         int burning = t > -4 && t <= 0 ? 0 : sim.EngineBurning ? sim.Stage - 1 : -1;
         for (int i = 0; i < 3; i++)
         {
             SetPart(rocket.PlumeModels[i], i == burning);
             if (i != burning) continue;
-            double h = t > 0 ? sim.Altitude : 0, expand = 1 + Math.Min(h / 60e3, 1.2);
+            double h = t > 0 ? sim.Altitude : 0, expand = 1 + 5 * (1 - Math.Pow(Earth.PressureRatio(h), 0.35));
             double length = i switch { 0 => t <= 0 ? 6 + (t + 4) * 4 : 22 + h / 2500, 1 => 26, _ => 12 } * (0.92 + 0.08 * Math.Sin(t * 37));
             // Near the pad the exhaust goes down the flame duct (drawn by LaunchSmoke); never draw it through the deck.
-            if (i == 0) length = Math.Min(length, Math.Max(h - NuriFlight2.PadAltitudeM, 0) * 1.5);
+            if (i == 0) length = Math.Min(length, Math.Max(h - NuriFlight2.PadAltitudeM - 2.0, 0));
             if (length < 0.5) { SetPart(rocket.PlumeModels[i], false); continue; }
-            rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = expand; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
+            rocket.ExpandPlume(i, expand); rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = 1; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
         }
     }
     private Vec rocketBase, rocketAxis;
     private Vec RocketCenter => rocketBase + rocketAxis * (sim.Stage == 1 ? 22 : sim.Stage == 2 ? 34 : 42);
     // After separation the camera, telemetry and orbit read-out follow the performance verification satellite.
     private Debris? Satellite => sim.Satellite;
-    private Vec FocusCenter => Satellite is { } sat ? sat.Position + rocketAxis * (NuriModel.Stage3Top + 0.9) : RocketCenter;
+    private Vec FocusCenter => Satellite is { } sat ? sat.Position + rocketAxis * SatelliteModel.Center.Y : RocketCenter;
     private Vec FocusPosition => Satellite?.Position ?? sim.Position;
     private Vec FocusVelocity => Satellite?.Velocity ?? sim.Velocity;
     private void SetPart(Model3D part, bool visible)
@@ -275,9 +317,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 if (piece.Kind == 4) { satelliteModel = new SatelliteModel(); model = new Model3DGroup(); model.Children.Add(satelliteModel.Root); }
                 else if (piece.Kind == 5)
                 {
-                    // Mass simulator: plain aluminium block on its adapter (≈1.3 t).
-                    model = new Model3DGroup();
-                    model.Children.Add(NuriModel.Box(0, NuriModel.Stage3Top + 0.7, 0, 1.3, 1.1, 1.3, NuriModel.Lit(Color.FromRgb(178, 182, 188))));
+                    model = new Model3DGroup(); model.Children.Add(new MassSimulatorModel().Root);
                 }
                 else model = piece.Kind == 3 ? NuriModel.FairingHalf(debrisModels.Keys.Count(k => k.Kind == 3) == 0) : NuriModel.SpentStage(piece.Kind);
                 var pose = new MatrixTransform3D(); model.Transform = pose;
@@ -285,7 +325,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             }
             // Tumble about an axis across the body; parts start aligned with the rocket.
             var axis = (rocketAxis * Math.Cos(piece.Tumble) + Vec.Cross(rocketAxis, piece.Position.Unit).Unit * Math.Sin(piece.Tumble)).Unit;
-            entry.Pose.Matrix = piece.Kind == 4 ? SatellitePose(piece, sim.Time) : Pose(piece.Position, piece.Kind <= 3 ? axis : rocketAxis, 1);
+            rebased[entry.Pose] = piece.Kind == 4 ? SatellitePose(piece, sim.Time) : Pose(piece.Position, piece.Kind <= 3 ? axis : rocketAxis, 1);
             if (piece.Kind == 4) LogSatellitePhases(sim.Time);
             if (piece.Landed && reportedLandings.Add(piece) && piece.Kind <= 3)
             {
@@ -309,6 +349,54 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         double s = scale / R; var p = SceneGeometry.Point(position);
         return new Matrix3D(x.X * s, x.Y * s, x.Z * s, 0, y.X * s, y.Y * s, y.Z * s, 0, z.X * s, z.Y * s, z.Z * s, 0, p.X, p.Y, p.Z, 1);
     }
+    // Pad-area image with alpha fading out between innerKm and outerKm, so the patch blends into the globe.
+    // Image bounds: Assets/naro-area.json.
+    private static BitmapSource FeatheredPatch(BitmapSource source, double innerKm, double outerKm)
+    {
+        var bgra = new FormatConvertedBitmap(source, PixelFormats.Pbgra32, null, 0);
+        int w = bgra.PixelWidth, h = bgra.PixelHeight;
+        var pixels = new byte[w * h * 4];
+        bgra.CopyPixels(pixels, w * 4, 0);
+        const double kmPerDeg = Math.PI * Earth.Radius / 180 / 1000;
+        double kmX = 1.8 * kmPerDeg * Math.Cos(NuriFlight2.PadLatitude * Math.PI / 180) / w, kmY = 1.5 * kmPerDeg / h;
+        for (int y = 0; y < h; y++)
+        {
+            double dy = (y + 0.5 - h / 2.0) * kmY;
+            for (int x = 0; x < w; x++)
+            {
+                double dx = (x + 0.5 - w / 2.0) * kmX;
+                double f = Math.Clamp((outerKm - Math.Sqrt(dx * dx + dy * dy)) / (outerKm - innerKm), 0, 1);
+                if (f >= 1) continue;
+                f = f * f * (3 - 2 * f);
+                int i = (y * w + x) * 4;
+                for (int c = 0; c < 4; c++) pixels[i + c] = (byte)(pixels[i + c] * f); // premultiplied
+            }
+        }
+        var result = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, pixels, w * 4);
+        result.Freeze();
+        return result;
+    }
+    // Moves a mesh into the frame's local metres so the large offset lives in the transform.
+    private static GeometryModel3D Localize(GeometryModel3D model, Matrix3D frame)
+    {
+        var mesh = ((MeshGeometry3D)model.Geometry).Clone();
+        var origin = new Point3D(frame.OffsetX, frame.OffsetY, frame.OffsetZ);
+        Vector3D Axis(double x, double y, double z) { var v = new Vector3D(x, y, z); return v / v.LengthSquared; }
+        Vector3D east = Axis(frame.M11, frame.M12, frame.M13), up = Axis(frame.M21, frame.M22, frame.M23), south = Axis(frame.M31, frame.M32, frame.M33);
+        for (int i = 0; i < mesh.Positions.Count; i++)
+        {
+            var d = mesh.Positions[i] - origin;
+            mesh.Positions[i] = new Point3D(Vector3D.DotProduct(d, east), Vector3D.DotProduct(d, up), Vector3D.DotProduct(d, south));
+        }
+        var normals = mesh.Normals.Select(n => new Vector3D(Vector3D.DotProduct(n, east), Vector3D.DotProduct(n, up), Vector3D.DotProduct(n, south)))
+            .Select(n => { n.Normalize(); return n; }).ToList();
+        mesh.Normals = new Vector3DCollection(normals);
+        mesh.Freeze();
+        var local = new GeometryModel3D(mesh, model.Material) { BackMaterial = model.BackMaterial, Transform = new MatrixTransform3D(frame) };
+        local.Freeze();
+        return local;
+    }
+
     // Local east/up/south frame at an Earth-fixed point (metres → scene units).
     private static Matrix3D LocalFrame(Vec fixedPosition)
     {
@@ -328,17 +416,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private void SampleTrack(double t)
     {
         lastSample = t;
-        pathPoints.Add(SceneGeometry.Point(sim.Position));
-        var fixedPos = sim.FixedPosition; var geo = Earth.Geodetic(fixedPos);
+        pathPoints.Add(SceneGeometry.Point(FocusPosition));
+        var fixedPos = Earth.InertialToFixed(FocusPosition, sim.Time);
         trackPoints.Add(SceneGeometry.Point(fixedPos.Unit * (R + 2500)));
-        AltitudeChart.Add(new Point(t / 1100 * ChartWidth, ChartHeight - Math.Min(sim.Altitude / 800e3, 1) * ChartHeight));
-        SpeedChart.Add(new Point(t / 1100 * ChartWidth, ChartHeight - Math.Min(sim.Velocity.Length / 8000, 1) * ChartHeight));
-        MapTrack.Add(MapPoint(geo.Latitude, geo.Longitude));
+        RecordDisplaySample(t);
     }
 
     // ---- Camera -------------------------------------------------------------------------------------------
     private CameraMode cameraMode = CameraMode.Auto, activeMode = CameraMode.Pad;
     private double orbitYaw = 0.6, orbitPitch = 0.15, chaseDistance = 120;
+    private double viewportAspect = 16.0 / 9;
+    public void SetViewportAspect(double aspect) { viewportAspect = Math.Max(0.1, aspect); displayDirty = true; }
     public Point3D CameraPosition { get; private set; }
     public Vector3D LookDirection { get; private set; } = new(0, 0, -1);
     public Vector3D UpDirection { get; private set; } = new(0, 1, 0);
@@ -356,8 +444,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         CameraMode.Pad => "발사대 지상 카메라", CameraMode.Globe => "지구 전체", _ => "자동"
     };
 
-    public void Rotate(double dx, double dy) { orbitYaw += dx * 0.008; orbitPitch = Math.Clamp(orbitPitch + dy * 0.006, -1.2, 1.4); }
-    public void Zoom(double delta) => chaseDistance = Math.Clamp(chaseDistance * Math.Exp(-delta * 0.0012), 40, 4000);
+    public void Rotate(double dx, double dy) { displayDirty = true; orbitYaw += dx * 0.008; orbitPitch = Math.Clamp(orbitPitch + dy * 0.006, -1.2, 1.4); }
+    public void Zoom(double delta) { displayDirty = true; chaseDistance = Math.Clamp(chaseDistance * Math.Exp(-delta * 0.0012), 40, 4000); }
 
     private CameraMode Director(double t)
     {
@@ -377,10 +465,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         return CameraMode.Globe;
     }
 
-    private readonly record struct ViewSpec(Point3D Eye, Vector3D Look, double Fov, double NearMeters, Point3D Origin);
-    private ViewSpec ComputeView(CameraMode view, double t, Point3D center, Vector3D up)
+    // Up: camera up when the view has its own frame (the onboard camera is bolted to the body); otherwise the local vertical.
+    private readonly record struct ViewSpec(Point3D Eye, Vector3D Look, double Fov, double NearMeters, Point3D Origin, Vector3D? Up = null);
+    private ViewSpec ComputeView(CameraMode view, double t, Point3D center, Vector3D up, double? aspect = null)
     {
-        Point3D origin = center, eye; Vector3D look; double fov = 45, nearMeters;
+        Point3D origin = center, eye; Vector3D look; double fov = 45, nearMeters; Vector3D? cameraUp = null;
         switch (view)
         {
             case CameraMode.Pad:
@@ -402,24 +491,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 double radius = sim.Stage == 1 ? NuriModel.Stage1Radius : NuriModel.UpperRadius;
                 // Camera on a short mount just off the skin (+x side); the body is at −x from it.
                 eye = basePoint + y * ((top - 1.0) / R) + x * ((radius + 0.7) / R);
-                // Looking aft along the body. Just after liftoff the ground fills that view, so tilt toward the horizon
-                // and blend back to the aft view by ~8 km.
-                double low = t > 0 ? Math.Clamp(1 - sim.Altitude / 8000, 0, 1) : 1;
-                // Aft view along the body; near the ground, blend toward a view defined in the local horizon frame
-                // (about 10° below the horizon) so the horizon and sky are in frame.
-                // Above the atmosphere the vehicle flies nearly horizontally, so a straight aft view is all black sky;
-                // tilt it toward the Earth so the limb and the ground below the plume are in frame.
+                // Looking aft along the body; above the atmosphere, tilted slightly toward the Earth.
                 double space = Math.Clamp((sim.Altitude - 80e3) / 100e3, 0, 1);
-                var aft = -y + x * 0.28 - up * (0.3 * space); aft.Normalize();
-                var horizontal = x - up * Vector3D.DotProduct(x, up); horizontal.Normalize();
-                double dip = 10 * Math.PI / 180;
-                // Look tangent to the skin (along the body's side, toward the horizon) and slightly back toward it,
-                // so the fuselage runs down one side of the frame as a fixed camera would see it.
-                var sideways = Vector3D.CrossProduct(up, horizontal); sideways.Normalize();
-                var horizonView = sideways * Math.Cos(dip) - up * Math.Sin(dip) - horizontal * 0.22;
-                horizonView.Normalize();
-                look = aft * (1 - low) + horizonView * low; fov = 62 + 8 * low; origin = eye; nearMeters = 0.2;
+                look = -y + x * 0.28 - up * (0.3 * space); fov = 62; origin = eye; nearMeters = 0.2;
                 look.Normalize(); look = ApplyShake(look, x, t);
+                // Image up fixed to the body, so the view does not roll.
+                cameraUp = Vector3D.CrossProduct(x, y);
                 break;
             }
             case CameraMode.Globe:
@@ -436,7 +513,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 var axis = SceneGeometry.Direction(Satellite is null ? rocketAxis : FocusVelocity);
                 var behind = t > 0 ? -axis : -up;
                 var side = Vector3D.CrossProduct(behind, up); if (side.LengthSquared < 1e-8) side = new Vector3D(1, 0, 0); side.Normalize();
-                double dist = (Satellite is not null ? chaseDistance * 0.12 : sim.Stage == 3 ? chaseDistance * 1.6 : chaseDistance) / R;
+                double dist = (Satellite is not null ? chaseDistance * 0.12 : sim.Stage == 3 ? chaseDistance * 0.65 : chaseDistance) / R;
+                // WPF FOV is horizontal. Fit the entire vehicle even when the inset reduces viewport height.
+                double halfFov = Math.Atan(Math.Tan(20 * Math.PI / 180) / Math.Max(1, aspect ?? viewportAspect));
+                double bodyRadius = Satellite is not null ? 0.9 : sim.Stage == 1 ? 26 : sim.Stage == 2 ? 14 : 6;
+                dist = Math.Max(dist, bodyRadius * 1.25 / Math.Sin(halfFov) / R);
                 var offset = behind * Math.Cos(orbitYaw) + side * Math.Sin(orbitYaw);
                 offset = offset * Math.Cos(orbitPitch) + up * Math.Sin(orbitPitch); offset.Normalize();
                 var padOffset = side * Math.Cos(orbitYaw) + up * 0.15 + (Vector3D)SceneGeometry.Direction(Vec.Cross(new Vec(0, 0, 1), rocketBase)) * Math.Sin(orbitYaw);
@@ -455,13 +536,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             }
         }
         look.Normalize();
-        return new ViewSpec(eye, look, fov, nearMeters, origin);
+        return new ViewSpec(eye, look, fov, nearMeters, origin, cameraUp);
     }
 
     private void UpdateCamera(double t, double wall)
     {
         var mode = Director(t);
-        if (mode != activeMode) { activeMode = mode; Notify(nameof(CameraText)); Notify(nameof(IsControlRoom)); Notify(nameof(ControlRoomVisibility)); }
+        if (mode != activeMode) { activeMode = mode; Notify(nameof(CameraText)); Notify(nameof(IsControlRoom)); Notify(nameof(ControlRoomVisibility)); Notify(nameof(SceneVisibility)); }
         var view = mode == CameraMode.ControlRoom ? CameraMode.Chase : mode;
         var center = SceneGeometry.Point(FocusCenter);
         var up = SceneGeometry.Direction(FocusCenter);
@@ -469,17 +550,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         Point3D origin = spec.Origin, eye = spec.Eye; Vector3D look = spec.Look; double fov = spec.Fov, nearMeters = spec.NearMeters;
         // Positions relative to the moving origin; double precision on the CPU keeps metre-scale detail.
         farOrigin.OffsetX = nearOrigin.OffsetX = -origin.X; farOrigin.OffsetY = nearOrigin.OffsetY = -origin.Y; farOrigin.OffsetZ = nearOrigin.OffsetZ = -origin.Z;
+        Rebase(origin);
         CameraPosition = new Point3D(eye.X - origin.X, eye.Y - origin.Y, eye.Z - origin.Z);
         look.Normalize(); LookDirection = look;
-        UpDirection = view == CameraMode.Globe ? new Vector3D(0, 1, 0) : up;
+        UpDirection = view == CameraMode.Globe ? new Vector3D(0, 1, 0) : spec.Up ?? up;
         FieldOfView = fov;
         double eyeAltitude = Math.Max(((Vector3D)eye).Length * R - R, 1);
-        // The far layer's nearest geometry is the ground, so its near plane follows the camera altitude; a metre-scale
-        // near plane against a far plane beyond the globe leaves no depth precision and the far side shows through.
+        // Far-layer near plane follows the altitude; a metre-scale near plane loses depth precision.
         FarNearPlane = Math.Max(eyeAltitude * 0.3, Math.Max(nearMeters, 2)) / R;
         FarFarPlane = ((Vector3D)eye).Length + 1.3;
-        // Keep the near layer's depth range proportional to what it shows (vehicle, pad, nearby debris):
-        // a 1 m..3,000 km range leaves no depth precision and inner parts show through the fairing.
+        // Near-layer depth range sized to the vehicle and nearby debris.
         double focusMetres = ((Vector3D)(eye - center)).Length * R;
         NearNearPlane = Math.Max(nearMeters, focusMetres * 0.01) / R;
         NearFarPlane = Math.Max(focusMetres * 50, 70e3) / R; // clouds reach ~50 km from the pad
@@ -487,25 +567,36 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         // Ribbon and marker sizes follow the camera distance.
         double viewDist = ((Vector3D)(eye - center)).Length;
         // The position marker is for distant views only; up close the model itself is visible.
-        markerScale.ScaleX = markerScale.ScaleY = markerScale.ScaleZ = viewDist * R > 30e3 ? viewDist * 0.006 : 0;
+        markerScale.ScaleX = markerScale.ScaleY = markerScale.ScaleZ = viewDist * R > 30e3 && !EarthOcclusion.Hidden(eye, center, 60 / R) ? viewDist * 0.008 : 0;
+        var markerRight = Vector3D.CrossProduct(look, UpDirection); markerRight.Normalize();
+        var markerUp = Vector3D.CrossProduct(markerRight, look); markerUp.Normalize();
+        markerFacing.Matrix = new Matrix3D(markerRight.X, markerRight.Y, markerRight.Z, 0,
+            markerUp.X, markerUp.Y, markerUp.Z, 0, -look.X, -look.Y, -look.Z, 0, 0, 0, 0, 1);
         markerPosition.OffsetX = center.X; markerPosition.OffsetY = center.Y; markerPosition.OffsetZ = center.Z;
         double width = Math.Clamp(viewDist * 0.0012, 3 / R, 0.004);
-        if (wall - lastRibbon > 0.5 || Math.Abs(width - ribbonWidth) > ribbonWidth * 0.5)
+        bool overview = viewDist * R > 200e3 || view == CameraMode.Globe || mode == CameraMode.ControlRoom;
+        bool resizeRibbon = Math.Abs(width - ribbonWidth) > ribbonWidth * 0.5;
+        if (wall - lastRibbon > 0.5 || resizeRibbon || overview != ribbonOverview)
         {
-            lastRibbon = wall; ribbonWidth = width;
+            bool rebuildHistory = ribbonPointCount != pathPoints.Count || resizeRibbon || overview != ribbonOverview || double.IsNegativeInfinity(lastRibbon);
+            lastRibbon = wall; ribbonWidth = width; ribbonOverview = overview;
             // The flight-path ribbon is for overview views; up close it would cut across the frame.
-            if (pathPoints.Count > 1) flightPath.Geometry = viewDist * R > 200e3 || view == CameraMode.Globe || mode == CameraMode.ControlRoom ? SceneGeometry.Ribbon(pathPoints, width) : null;
-            if (trackPoints.Count > 1) groundTrack.Geometry = SceneGeometry.Ribbon(trackPoints, width);
+            if (rebuildHistory)
+            {
+                ribbonPointCount = pathPoints.Count;
+                if (pathPoints.Count > 1) flightPath.Geometry = overview ? SceneGeometry.Ribbon(pathPoints, width) : null;
+                if (trackPoints.Count > 1) groundTrack.Geometry = SceneGeometry.Ribbon(trackPoints, width);
+                if (previousOrbitPoints.Count > 1) previousOrbit.Geometry = SceneGeometry.Ribbon(previousOrbitPoints, width * 0.6);
+            }
             if (sim.Phase == FlightPhase.Orbit) orbitPath.Geometry = SceneGeometry.Ribbon(OrbitMath.Revolution(FocusPosition, FocusVelocity).Select(SceneGeometry.Point).ToList(), width * 0.8);
-            if (previousOrbitPoints.Count > 1) previousOrbit.Geometry = SceneGeometry.Ribbon(previousOrbitPoints, width * 0.6);
         }
         UpdateSky(eye);
         UpdateInset(view, t, center, up, origin);
+        UpdateViewOcclusion(eye, origin);
         foreach (var p in new[] { nameof(CameraPosition), nameof(LookDirection), nameof(UpDirection), nameof(FieldOfView), nameof(FarNearPlane), nameof(FarFarPlane), nameof(NearNearPlane), nameof(NearFarPlane) }) Notify(p);
     }
 
-    // Daylight sky by camera altitude (Rayleigh-blue near the ground, deep blue in the stratosphere, black above
-    // ~100 km), scaled by how high the Sun is at the camera. Illustrative colours.
+    // Daylight sky colour by camera altitude, scaled by the Sun's height at the camera.
     public Brush SkyBrush { get; private set; } = Brushes.Black;
     private static readonly Brush SpaceBrush = CreateSpaceBrush();
     private static Brush CreateSpaceBrush() { var b = new SolidColorBrush(Color.FromRgb(3, 5, 12)); b.Freeze(); return b; }
@@ -526,11 +617,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         skyDome.Update(up, day, km, brush.Color);
         Notify(nameof(SkyBrush)); Notify(nameof(StarOpacity));
         limbGlow.Update(eye);
+        atmosphere.Update(km);
     }
 
     // ---- Fine adjustment (satellite manoeuvres) ------------------------------------------------------------
-    // Illustrative exercise: impulsive burns on the separated satellite. The Δv budget is an example value,
-    // not a published specification of the performance verification satellite.
+    // Practice burns on the separated satellite. The Δv budget is an example value.
     public const double DeltaVBudget = 30;
     private readonly GeometryModel3D previousOrbit = new() { Material = SceneGeometry.MarkerMaterial(Color.FromRgb(120, 130, 150)) };
     private List<Point3D> previousOrbitPoints = [];
@@ -552,7 +643,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         {
             if (Satellite is not { } sat) return;
             var el = OrbitMath.Elements(sat.Position, sat.Velocity);
-            pendingBurn = missionTime + el.TimeToApoapsis;
+            pendingBurn = Math.Ceiling((sim.Time + el.TimeToApoapsis) / AscentSimulator.Step) * AscentSimulator.Step; displayDirty = true;
             AddLog(missionTime, $"자동 조정 예약 · 다음 원지점(T+{Clock(pendingBurn.Value)[2..]})에서 원궤도화 분사");
         });
     }
@@ -581,7 +672,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var after = OrbitMath.Elements(sat.Position, sat.Velocity);
         AddLog(missionTime, $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {before.PerigeeKm:N1}→{after.PerigeeKm:N1} km, 원지점 {before.ApogeeKm:N1}→{after.ApogeeKm:N1} km, 경사각 {before.InclinationDeg:0.000}→{after.InclinationDeg:0.000}°");
         LatestEvent = $"{DirectionName(direction)} {deltaV:0.0} m/s 분사 · 근지점 {after.PerigeeKm:N0} km / 원지점 {after.ApogeeKm:N0} km"; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
-        lastRibbon = double.NegativeInfinity;
+        lastRibbon = double.NegativeInfinity; displayDirty = true;
     }
 
     private void ExecuteAutoBurn()
@@ -608,7 +699,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
 
     // ---- Telemetry ----------------------------------------------------------------------------------------
     public string MissionClock => Clock(missionTime);
-    public string CountdownText => missionTime < 0 && missionTime > -11 ? $"{Math.Ceiling(-missionTime):0}" : "";
+    public string CountdownText => missionTime < 0 && missionTime > -10 ? $"{Math.Ceiling(-missionTime):0}" : "";
     public string StageText { get; private set; } = "";
     public string AltitudeText { get; private set; } = "";
     public string SpeedTextValue { get; private set; } = "";
@@ -627,18 +718,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public PointCollection MapTrack { get; private set; } = [];
     public const double ChartWidth = 300, ChartHeight = 110, MapWidth = 300, MapHeight = 390;
     public static Point MapPoint(double latitude, double longitude) => new((longitude - 100) / 50 * MapWidth, (45 - latitude) / 65 * MapHeight);
-    public Point NaroMapPoint => MapPoint(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude);
-    public Point JejuMapPoint => MapPoint(Stations[1].Lat, Stations[1].Lon);
-    public Point PalauMapPoint => MapPoint(Stations[2].Lat, Stations[2].Lon);
+    public Point NaroMapPoint => ProjectMap(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude);
+    public Point JejuMapPoint => ProjectMap(Stations[1].Lat, Stations[1].Lon);
+    public Point PalauMapPoint => ProjectMap(Stations[2].Lat, Stations[2].Lon);
     // Station positions: Naro (pad), Jeju and Palau are approximate [근사] — exact coordinates are not public.
     private static readonly (string Name, double Lat, double Lon)[] Stations = [("나로", 34.43, 127.53), ("제주", 33.30, 126.60), ("팔라우", 7.34, 134.48)];
 
-    private double lastTelemetry = double.NegativeInfinity;
-    private void UpdateTelemetry(double t)
+    private double lastTelemetryWall = double.NegativeInfinity;
+    private void UpdateTelemetry(double t, double wall)
     {
+        // Read-outs refresh at 10 Hz; input and jumps refresh at once.
+        if (!displayDirty && wall >= lastTelemetryWall && wall - lastTelemetryWall < 0.1) return;
+        lastTelemetryWall = wall;
         Notify(nameof(MissionClock)); Notify(nameof(CountdownText)); Notify(nameof(PlayText));
-        if (Math.Abs(t - lastTelemetry) < 0.1 && t > 0) return;
-        lastTelemetry = t;
         bool flying = t > 0;
         StageText = Satellite is not null ? "성능검증위성 · 궤도 비행 (정밀 조정 가능)" : !flying ? (t > -4 ? "점화 · 추력 상승" : "발사 대기") : sim.Phase switch
         {
@@ -646,10 +738,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             FlightPhase.Stage2Coast => "2·3단 분리 후 관성 비행", FlightPhase.Stage3 => "3단 연소", _ => "궤도 비행"
         };
         AltitudeText = flying ? $"{(FocusPosition.Length - Earth.Radius) / 1000:0.0} km" : "0.0 km";
-        SpeedTextValue = flying ? $"{FocusVelocity.Length / 1000:0.000} km/s (대지 {sim.RelativeVelocity.Length / 1000:0.000}) · M{sim.Mach:0.0}" : "0.000 km/s";
+        var relativeVelocity = FocusVelocity - Vec.Cross(new Vec(0, 0, Earth.OmegaRadPerSecond), FocusPosition);
+        SpeedTextValue = flying ? $"{FocusVelocity.Length / 1000:0.000} km/s (대지 {relativeVelocity.Length / 1000:0.000}) · M{relativeVelocity.Length / Earth.SpeedOfSound(FocusPosition.Length - R):0.0}" : "0.000 km/s";
         AccelerationText = flying ? $"{sim.SensedAccelerationG:0.00} G (최대 {sim.MaxAccelerationG:0.00})" : "1.00 G";
         PressureText = flying ? $"{sim.DynamicPressure / 1000:0.0} kPa" : "0.0 kPa";
-        DownrangeText = flying ? $"{sim.Downrange / 1000:N0} km · 비행경로각 {sim.FlightPathAngleDeg:0.0}°" : "0 km";
+        DownrangeText = flying ? $"{Earth.SurfaceDistance(sim.PadFixed, Earth.InertialToFixed(FocusPosition, sim.Time)) / 1000:N0} km · 비행경로각 {Math.Asin(Math.Clamp(Vec.Dot(FocusVelocity.Unit, FocusPosition.Unit), -1, 1)) * 180 / Math.PI:0.0}°" : "0 km";
         PropellantText = sim.Phase == FlightPhase.Orbit ? "-" : $"{sim.CurrentStage.Name} {sim.PropellantFraction * 100:0}%";
         var focusOrbit = OrbitMath.Elements(FocusPosition, FocusVelocity);
         var orbit = (focusOrbit.PerigeeKm, focusOrbit.ApogeeKm, focusOrbit.InclinationDeg);
@@ -660,14 +753,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
                 : orbit.PerigeeKm < 100 ? $"아직 궤도 아님 (준궤도) · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°"
                 : $"근지점 {orbit.PerigeeKm:N0} km · 원지점 {orbit.ApogeeKm:N0} km · 경사각 {orbit.InclinationDeg:0.00}°")
             : "목표: 700 km 태양동기궤도 · 경사각 98.2°";
-        var fixedPos = flying ? sim.FixedPosition : sim.PadFixed; var geo = Earth.Geodetic(fixedPos);
-        RocketMapPoint = MapPoint(geo.Latitude, geo.Longitude);
+        var fixedPos = flying ? Earth.InertialToFixed(FocusPosition, sim.Time) : sim.PadFixed; var geo = Earth.Geodetic(fixedPos);
+        RocketMapPoint = ProjectMap(geo.Latitude, geo.Longitude);
         StationText = string.Join("   ", Stations.Select(s =>
         {
             double el = Earth.Elevation(Earth.FixedPosition(s.Lat, s.Lon, 0), fixedPos + fixedPos.Unit * 50);
             return $"{s.Name} {(el >= 2 ? "수신" : "—")} {el:0}°";
         }));
-        foreach (var p in new[] { nameof(StageText), nameof(AltitudeText), nameof(SpeedTextValue), nameof(AccelerationText), nameof(PressureText), nameof(DownrangeText), nameof(PropellantText), nameof(OrbitText), nameof(RocketMapPoint), nameof(StationText) }) Notify(p);
+        foreach (var p in new[] { nameof(StageText), nameof(AltitudeText), nameof(SpeedTextValue), nameof(AccelerationText), nameof(PressureText), nameof(DownrangeText), nameof(PropellantText), nameof(OrbitText), nameof(RocketMapPoint), nameof(StationText), nameof(ChartRangeText), nameof(ChartCursorX), nameof(ControlRoomTitle) }) Notify(p);
     }
 
     private void OnFlightEvent(FlightEvent e)

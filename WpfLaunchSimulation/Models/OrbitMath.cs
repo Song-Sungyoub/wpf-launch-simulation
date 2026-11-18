@@ -26,16 +26,23 @@ public static class OrbitMath
     }
     private static double Mod(double x, double m) => ((x % m) + m) % m;
 
-    // Two-body propagation for drawing one revolution (no drag; fine above ~400 km over one orbit).
+    // Osculating ellipse for display.
     public static List<Vec> Revolution(Vec r, Vec v, int samples = 240)
     {
-        var points = new List<Vec>();
+        if (samples < 3) throw new ArgumentOutOfRangeException(nameof(samples));
+        var points = new List<Vec>(samples + 1);
         var el = Elements(r, v); if (!el.Bound) return points;
-        double dt = el.PeriodSeconds / samples;
+        var h = Vec.Cross(r, v);
+        if (h.Length < 1e-9) return points;
+        var eccentricity = Vec.Cross(v, h) / Earth.Mu - r.Unit;
+        var p = el.Eccentricity > 1e-8 ? eccentricity.Unit : r.Unit;
+        var q = Vec.Cross(h.Unit, p).Unit;
+        double a = el.SemiMajorAxis, b = a * Math.Sqrt(Math.Max(0, 1 - el.Eccentricity * el.Eccentricity));
+        double start = Math.Atan2(Vec.Dot(r, q) / b, Vec.Dot(r, p) / a + el.Eccentricity);
         for (int i = 0; i <= samples; i++)
         {
-            points.Add(r);
-            for (int k = 0; k < 10; k++) { double rl = r.Length; v += r * (-Earth.Mu / (rl * rl * rl)) * (dt / 10); r += v * (dt / 10); }
+            double angle = start + i * 2 * Math.PI / samples;
+            points.Add(p * (a * (Math.Cos(angle) - el.Eccentricity)) + q * (b * Math.Sin(angle)));
         }
         return points;
     }

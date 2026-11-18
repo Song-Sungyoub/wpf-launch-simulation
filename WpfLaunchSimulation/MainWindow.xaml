@@ -30,8 +30,8 @@
     <Grid Margin="14">
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="330"/></Grid.ColumnDefinitions>
         <Border CornerRadius="14" ClipToBounds="True" BorderBrush="#24334B" BorderThickness="1" Margin="0,0,12,0" Background="{Binding SkyBrush}">
-            <Grid>
-                <Grid x:Name="MainScene">
+            <Grid x:Name="SceneLayout" SizeChanged="OnSceneSizeChanged">
+                <Grid x:Name="MainScene" Visibility="{Binding SceneVisibility}" SizeChanged="OnMainSceneSizeChanged">
                 <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
                     <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
                     <ModelVisual3D Content="{Binding SkyScene}"/>
@@ -51,7 +51,10 @@
                 </Grid>
                 <Border x:Name="InputSurface" Background="Transparent" MouseLeftButtonDown="OnPointerDown" MouseLeftButtonUp="OnPointerUp" MouseMove="OnPointerMove" MouseWheel="OnMouseWheel"/>
 
-                <!-- Heads-up telemetry -->
+                <!-- Each column scales down independently; panels cannot overlap on a narrow viewport. -->
+                <Grid VerticalAlignment="Top" IsHitTestVisible="False" Visibility="{Binding SceneVisibility}">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
                 <Border Style="{StaticResource Panel}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Width="330">
                     <StackPanel>
                         <TextBlock Text="{Binding MissionClock}" FontFamily="Consolas" FontSize="30" FontWeight="Bold" Foreground="#FFD35A"/>
@@ -69,25 +72,29 @@
                         <TextBlock Text="{Binding OrbitText}" FontSize="11" Foreground="#B7CCE5" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
                 </Border>
-                <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" VerticalAlignment="Top" IsHitTestVisible="False" Padding="10,5">
+                    </Viewbox>
+                    <Viewbox Grid.Column="1" Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Right" VerticalAlignment="Top">
+                        <StackPanel >
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" IsHitTestVisible="False" Padding="10,5">
                     <TextBlock Text="{Binding CameraText}" FontSize="12" Foreground="#B7CCE5"/>
                 </Border>
-                <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="96" FontWeight="Bold" Foreground="#CCFFD35A"
-                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" IsHitTestVisible="False"/>
-                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,74" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
-                    <TextBlock Text="{Binding LatestEvent}" FontSize="16" Foreground="#FFD35A"/>
-                </Border>
-
-                <!-- Explanation card -->
-                <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,52,12,0" Width="340" IsHitTestVisible="False"
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Right" Margin="0,4,6,0" Width="340" IsHitTestVisible="False"
                         Visibility="{Binding CardVisibility}" BorderBrush="#65DEE0" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Text="{Binding CardTitle}" FontSize="15" FontWeight="SemiBold" Foreground="#FFD35A"/>
                         <TextBlock Text="{Binding CardText}" FontSize="12" Foreground="#DCE6F2" TextWrapping="Wrap" LineHeight="19" Margin="0,6,0,0"/>
                     </StackPanel>
                 </Border>
+                        </StackPanel>
+                    </Viewbox>
+                </Grid>
+                <TextBlock Text="{Binding CountdownText}" FontFamily="Consolas" FontSize="80" FontWeight="Bold" Foreground="#CCFFD35A"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="{Binding SceneVisibility}"/>
+                <Border Style="{StaticResource Panel}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,82" IsHitTestVisible="False" Padding="14,6" Visibility="{Binding LatestEventVisibility}">
+                    <TextBlock Text="{Binding LatestEvent}" FontSize="15" Foreground="#FFD35A" TextWrapping="Wrap"/>
+                </Border>
                 <!-- Picture-in-picture: onboard camera while chasing (or the reverse); click to swap. -->
-                <Button Width="384" Height="216" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,74" Cursor="Hand"
+                <Button x:Name="InsetButton" Width="384" Height="216" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,14,82" Cursor="Hand"
                         Visibility="{Binding InsetVisibility}" Command="{Binding SwapInsetCommand}" AutomationProperties.Name="카메라 전환">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
@@ -98,21 +105,21 @@
                     </Button.Template>
                     <Grid>
                         <Grid x:Name="InsetScene">
-                        <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
+                        <Viewport3D IsHitTestVisible="False" Opacity="{Binding InsetStarOpacity}">
                             <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
                             <ModelVisual3D Content="{Binding SkyScene}"/>
                         </Viewport3D>
                         <Viewport3D IsHitTestVisible="False">
                             <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
-                            <ModelVisual3D Content="{Binding DomeScene}"/>
+                            <ModelVisual3D Content="{Binding InsetDomeScene}"/>
                         </Viewport3D>
                         <Viewport3D IsHitTestVisible="False">
                             <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetFarNearPlane}" FarPlaneDistance="{Binding InsetFarFarPlane}"/></Viewport3D.Camera>
-                            <ModelVisual3D Content="{Binding FarScene}"/>
+                            <ModelVisual3D Content="{Binding InsetFarScene}"/>
                         </Viewport3D>
                         <Viewport3D IsHitTestVisible="False">
                             <Viewport3D.Camera><PerspectiveCamera Position="{Binding InsetCameraPosition}" LookDirection="{Binding InsetLookDirection}" UpDirection="{Binding InsetUpDirection}" FieldOfView="{Binding InsetFieldOfView}" NearPlaneDistance="{Binding InsetNearNearPlane}" FarPlaneDistance="{Binding InsetNearFarPlane}"/></Viewport3D.Camera>
-                            <ModelVisual3D Content="{Binding NearScene}"/>
+                            <ModelVisual3D Content="{Binding InsetNearScene}"/>
                         </Viewport3D>
                         </Grid>
                         <Border Background="#B3081425" CornerRadius="4" Padding="6,2" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">
@@ -121,24 +128,28 @@
                     </Grid>
                 </Button>
                 <!-- Mission timeline: click to jump -->
-                <Border VerticalAlignment="Bottom" Margin="14,0,14,12" Height="52" CornerRadius="8" Background="#CC0B1426" ClipToBounds="False">
+                <Border Panel.ZIndex="2" VerticalAlignment="Bottom" Margin="14,0,14,12" Height="64" CornerRadius="8" Background="#CC0B1426" ClipToBounds="False">
                     <Canvas x:Name="TimelineCanvas" Margin="12,0" ClipToBounds="False" Background="Transparent" Cursor="Hand"
                             SizeChanged="OnTimelineSizeChanged" MouseLeftButtonDown="OnTimelineClick" ToolTip="클릭해서 해당 시점으로 이동"/>
                 </Border>
 
                 <!-- Control room: flight map, charts, stations, log; the lower-right cell keeps the tracking camera. -->
-                <Grid Visibility="{Binding ControlRoomVisibility}" Background="#E6070C17" IsHitTestVisible="False">
+                <Viewbox Visibility="{Binding ControlRoomVisibility}" Stretch="Uniform" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,0,82">
+                <Grid Width="720" Height="610" Background="#E6070C17">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="340"/><ColumnDefinition/></Grid.ColumnDefinitions>
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-                    <TextBlock Grid.ColumnSpan="2" Text="나로우주센터 발사통제 · 비행 감시" FontSize="16" FontWeight="SemiBold" Margin="18,14,0,4" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.ColumnSpan="2" Text="{Binding ControlRoomTitle}" FontSize="16" FontWeight="SemiBold" Margin="18,14,0,4" HorizontalAlignment="Center"/>
                     <Border Grid.Row="1" Style="{StaticResource Panel}">
                         <StackPanel>
-                            <TextBlock Text="비행 궤적 · 지상궤적" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                            <Canvas Width="300" Height="390" ClipToBounds="True">
+                            <TextBlock Text="{Binding TrackTargetText}" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                            <Canvas Width="300" Height="{Binding MapDisplayHeight}" ClipToBounds="True">
                                 <Canvas.Background>
-                                    <ImageBrush ImageSource="Assets/earth.jpg" ViewboxUnits="RelativeToBoundingBox" Viewbox="0.7778,0.25,0.1389,0.3611" Stretch="Fill"/>
+                                    <ImageBrush ImageSource="Assets/earth.jpg" ViewboxUnits="RelativeToBoundingBox" Viewbox="{Binding MapViewbox}" Stretch="Fill"/>
                                 </Canvas.Background>
-                                <Polyline Points="{Binding MapTrack}" Stroke="#FFD35A" StrokeThickness="2.5"/>
+                                <ItemsControl ItemsSource="{Binding MapTrackSegments}" Width="300" Height="{Binding MapDisplayHeight}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate><DataTemplate><Polyline Points="{Binding}" Stroke="#FFD35A" StrokeThickness="2"/></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
                                 <Ellipse Width="10" Height="10" Fill="#65DEE0" Margin="-5,-5,0,0" Canvas.Left="{Binding NaroMapPoint.X}" Canvas.Top="{Binding NaroMapPoint.Y}"/>
                                 <TextBlock Text="나로" FontSize="11" Canvas.Left="{Binding NaroMapPoint.X}" Canvas.Top="{Binding NaroMapPoint.Y}" Margin="8,-8,0,0"/>
                                 <Ellipse Width="8" Height="8" Fill="#46F0B4" Margin="-4,-4,0,0" Canvas.Left="{Binding JejuMapPoint.X}" Canvas.Top="{Binding JejuMapPoint.Y}"/>
@@ -147,7 +158,7 @@
                                 <TextBlock Text="팔라우" FontSize="11" Canvas.Left="{Binding PalauMapPoint.X}" Canvas.Top="{Binding PalauMapPoint.Y}" Margin="8,-8,0,0"/>
                                 <Ellipse Width="12" Height="12" Fill="White" Stroke="#FFD35A" StrokeThickness="2" Margin="-6,-6,0,0" Canvas.Left="{Binding RocketMapPoint.X}" Canvas.Top="{Binding RocketMapPoint.Y}"/>
                             </Canvas>
-                            <TextBlock Text="경도 100°~150°E · 위도 20°S~45°N · 추적소 좌표는 근사" FontSize="10" Foreground="#899BB5" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding MapExtentText}" FontSize="10" Foreground="#899BB5" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
                     <Grid Grid.Row="1" Grid.Column="1">
@@ -155,19 +166,48 @@
                         <Border Style="{StaticResource Panel}" HorizontalAlignment="Left">
                             <StackPanel>
                                 <TextBlock Text="고도 (0~800 km)" Style="{StaticResource Label}" Margin="0,0,0,2"/>
-                                <Border Background="#0B1426" BorderBrush="#24334B" BorderThickness="1"><Canvas Width="300" Height="110"><Polyline Points="{Binding AltitudeChart}" Stroke="#65DEE0" StrokeThickness="2"/></Canvas></Border>
+                                <Border Background="#0B1426" BorderBrush="#24334B" BorderThickness="1"><Canvas Width="300" Height="110" ClipToBounds="True">
+                                    <Path Data="M0,27.5 H300 M0,55 H300 M0,82.5 H300 M75,0 V110 M150,0 V110 M225,0 V110" Stroke="#24334B" StrokeThickness="0.5"/>
+                                    <Polyline Points="{Binding AltitudeChart}" Stroke="#65DEE0" StrokeThickness="2"/>
+                                    <Line X1="{Binding ChartCursorX}" X2="{Binding ChartCursorX}" Y1="0" Y2="110" Stroke="#FFD35A" StrokeDashArray="3,3"/>
+                                    <TextBlock Text="800" FontSize="9" Foreground="#899BB5" Canvas.Top="0"/>
+                                    <TextBlock Text="400" FontSize="9" Foreground="#899BB5" Canvas.Top="50"/>
+                                </Canvas></Border>
                                 <TextBlock Text="관성 속도 (0~8 km/s)" Style="{StaticResource Label}"/>
-                                <Border Background="#0B1426" BorderBrush="#24334B" BorderThickness="1"><Canvas Width="300" Height="110"><Polyline Points="{Binding SpeedChart}" Stroke="#FFBC5F" StrokeThickness="2"/></Canvas></Border>
-                                <TextBlock Text="0 ~ 1,100 s" FontSize="10" Foreground="#899BB5"/>
+                                <Border Background="#0B1426" BorderBrush="#24334B" BorderThickness="1"><Canvas Width="300" Height="110" ClipToBounds="True">
+                                    <Path Data="M0,27.5 H300 M0,55 H300 M0,82.5 H300 M75,0 V110 M150,0 V110 M225,0 V110" Stroke="#24334B" StrokeThickness="0.5"/>
+                                    <Polyline Points="{Binding SpeedChart}" Stroke="#FFBC5F" StrokeThickness="2"/>
+                                    <Line X1="{Binding ChartCursorX}" X2="{Binding ChartCursorX}" Y1="0" Y2="110" Stroke="#FFD35A" StrokeDashArray="3,3"/>
+                                    <TextBlock Text="8" FontSize="9" Foreground="#899BB5"/>
+                                    <TextBlock Text="4" FontSize="9" Foreground="#899BB5" Canvas.Top="50"/>
+                                </Canvas></Border>
+                                <TextBlock Text="{Binding ChartRangeText}" FontSize="10" Foreground="#899BB5"/>
                                 <TextBlock Text="추적소 (고각)" Style="{StaticResource Label}"/>
                                 <TextBlock Text="{Binding StationText}" FontFamily="Consolas" FontSize="12"/>
                             </StackPanel>
                         </Border>
                         <Border Grid.Row="1" BorderBrush="#65DEE0" BorderThickness="1" CornerRadius="8" Margin="8" Background="Transparent">
-                            <TextBlock Text="추적 영상" FontSize="11" Foreground="#65DEE0" Margin="8,4" VerticalAlignment="Top"/>
+                            <Grid x:Name="TrackingScene">                <Viewport3D IsHitTestVisible="False" Opacity="{Binding StarOpacity}">
+                    <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
+                    <ModelVisual3D Content="{Binding SkyScene}"/>
+                </Viewport3D>
+                <Viewport3D IsHitTestVisible="False">
+                    <Viewport3D.Camera><PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="1" FarPlaneDistance="1000"/></Viewport3D.Camera>
+                    <ModelVisual3D Content="{Binding DomeScene}"/>
+                </Viewport3D>
+                <Viewport3D IsHitTestVisible="False">
+                    <Viewport3D.Camera><PerspectiveCamera Position="{Binding CameraPosition}" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="{Binding FarNearPlane}" FarPlaneDistance="{Binding FarFarPlane}"/></Viewport3D.Camera>
+                    <ModelVisual3D Content="{Binding FarScene}"/>
+                </Viewport3D>
+                <Viewport3D IsHitTestVisible="False">
+                    <Viewport3D.Camera><PerspectiveCamera Position="{Binding CameraPosition}" LookDirection="{Binding LookDirection}" UpDirection="{Binding UpDirection}" FieldOfView="{Binding FieldOfView}" NearPlaneDistance="{Binding NearNearPlane}" FarPlaneDistance="{Binding NearFarPlane}"/></Viewport3D.Camera>
+                    <ModelVisual3D Content="{Binding NearScene}"/>
+                </Viewport3D>
+<Border Background="#CC0B1426" HorizontalAlignment="Left" VerticalAlignment="Top" Padding="6,3" Margin="5"><TextBlock Text="추적 영상" FontSize="11" Foreground="#65DEE0"/></Border></Grid>
                         </Border>
                     </Grid>
                 </Grid>
+                </Viewbox>
             </Grid>
         </Border>
 
@@ -201,7 +241,11 @@
                         </WrapPanel>
                         <TextBlock Text="3인칭: 드래그로 회전, 휠로 거리 조절" FontSize="10" Foreground="#899BB5"/>
                         <CheckBox Content="설명 카드 표시" IsChecked="{Binding ShowCards}" Foreground="#E7EEF8" Margin="0,8,0,0"/>
-                        <CheckBox Content="소리 (합성음)" IsChecked="{Binding SoundOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
+                        <CheckBox Content="화면 효과 (빛 번짐)" IsChecked="{Binding PostProcessingOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
+                        <TextBlock Text="빛 번짐 강도" Style="{StaticResource Label}"/>
+                        <Slider Minimum="0" Maximum="1" Value="{Binding BloomStrength}" IsEnabled="{Binding PostProcessingOn}"/>
+                        <CheckBox Content="탑재 카메라 진동" IsChecked="{Binding ShakeOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
+                        <CheckBox Content="소리" IsChecked="{Binding SoundOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource Panel}" Margin="0,0,0,10" Visibility="{Binding ManeuverVisibility}">
@@ -227,16 +271,6 @@
                         <TextBlock Text="회색 선: 분사 전 궤도 · 하늘색 선: 현재 궤도. Δv 예산 30 m/s는 예시값입니다." FontSize="10" Foreground="#899BB5" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
-                <Border Style="{StaticResource Panel}" Margin="0,0,0,10">
-                    <StackPanel>
-                        <TextBlock Text="비행 기록" Style="{StaticResource Label}" Margin="0,0,0,4"/>
-                        <ItemsControl ItemsSource="{Binding Log}">
-                            <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" Foreground="#B7CCE5"/></DataTemplate></ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
-                <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="#899BB5"
-                           Text="공개 자료(항우연·언론 보도·논문) 기반 재현입니다. 단별 건조 질량, 피치 프로그램, 유도 법칙, 추적소 좌표는 공개되지 않아 근사값을 썼습니다. 자료와 근거: docs/research-nuri-flight2.md"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>

@@ -12,7 +12,7 @@ public sealed partial class MainViewModel
     private LaunchAudio? audio;
     private bool soundOn = true;
     private double lastAudioTime = double.NaN;
-    public bool SoundOn { get => soundOn; set { soundOn = value; Notify(); } }
+    public bool SoundOn { get => soundOn; set { soundOn = value; displayDirty = true; Notify(); } }
 
     private void UpdateAudio(double t)
     {

@@ -5,10 +5,8 @@ using System.Windows.Media.Media3D;
 
 namespace WpfLaunchSimulation.Rendering;
 
-// Ground around the pad, in pad-local metres (+X east, +Y up, +Z south). The colours come from the NASA Landsat pad-area
-// image (land/sea and vegetation where they really are), sharpened with procedural canopy and wave detail. The hill
-// relief is illustrative [근사]: no elevation data is shipped, so land rises with smooth noise away from the pad clearing
-// (Naro sits on a hilly island; nearby peaks are a few hundred metres). Concrete and building textures are procedural.
+// Ground around the pad, in pad-local metres (+X east, +Y up, +Z south), coloured from the Landsat image
+// with procedural canopy and wave detail. Hill relief is illustrative (no elevation data).
 public static class PadSurroundings
 {
     private const double Extent = 3000;          // terrain covers ±3 km

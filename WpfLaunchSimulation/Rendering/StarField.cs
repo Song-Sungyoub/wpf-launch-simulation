@@ -5,8 +5,7 @@ using System.Windows.Media.Media3D;
 
 namespace WpfLaunchSimulation.Rendering;
 
-// Decorative, deterministic celestial backdrop; these are not catalogued stars.
-// Star cores are geometry, so fullscreen does not magnify a low-resolution texture.
+// Decorative star backdrop (not a catalogue). Faint stars are baked into the sky texture.
 internal static class StarField
 {
     private static readonly Lazy<Model3DGroup> template = new(Build);
@@ -36,6 +35,7 @@ internal static class StarField
             double color=random.NextDouble(); int tint=color<0.55?0:color<0.83?1:color<0.94?2:3;
             double angle=(tier switch{0=>0.010,1=>0.016,2=>0.025,_=>0.038})*(0.8+0.4*random.NextDouble());
             double size=500*Math.Tan(angle*Math.PI/180);
+            if (tier < 2) continue;
             AddCore(meshes[tint*4+tier],(Point3D)(outward*500),right,up,size);
             if(tier==3) AddHalo(halos[tint],(Point3D)(outward*500.1),right,up,size*4);
         }
@@ -73,7 +73,7 @@ internal static class StarField
     }
     private static BitmapSource GalacticBackground()
     {
-        const int width=2048,height=1024;var pixels=new byte[width*height*4];
+        const int width=4096,height=2048;var pixels=new byte[width*height*4];
         var axis=new Vector3D(0.37,0.82,-0.44);axis.Normalize();
         for(int y=0;y<height;y++)
         {
@@ -88,6 +88,29 @@ internal static class StarField
                 double dust=1-0.65*Math.Exp(-Math.Pow(band+0.018*Math.Sin(17*nx+9*nz),2)/0.0008);
                 double light=glow*dust;int p=(y*width+x)*4;
                 pixels[p]=(byte)(8+14*light);pixels[p+1]=(byte)(5+11*light);pixels[p+2]=(byte)(4+10*light);pixels[p+3]=255;
+            }
+        }
+        // Same stars as the geometric ones, splatted bilinearly; longitude wraps at the seam.
+        var random = new Random(731);
+        for (int i = 0; i < 14000; i++)
+        {
+            double latitude = Math.Asin(2 * random.NextDouble() - 1), longitude = 2 * Math.PI * random.NextDouble();
+            double chance = random.NextDouble(), color = random.NextDouble();
+            double variation = 0.8 + 0.4 * random.NextDouble();
+            if (chance >= 0.94) continue;
+            int tint = color < 0.55 ? 0 : color < 0.83 ? 1 : color < 0.94 ? 2 : 3;
+            double px = longitude / (2 * Math.PI) * width - 0.5;
+            double py = (0.5 - latitude / Math.PI) * height - 0.5;
+            int x0 = (int)Math.Floor(px), y0 = (int)Math.Floor(py);
+            double energy = (chance < 0.72 ? 0.42 : 0.64) * variation;
+            for (int dy = 0; dy < 2; dy++) for (int dx = 0; dx < 2; dx++)
+            {
+                int x = ((x0 + dx) % width + width) % width, y = Math.Clamp(y0 + dy, 0, height - 1);
+                double weight = (dx == 0 ? 1 - (px - x0) : px - x0) * (dy == 0 ? 1 - (py - y0) : py - y0) * energy;
+                int p = (y * width + x) * 4; var c = tints[tint];
+                pixels[p] = (byte)Math.Min(255, pixels[p] + c.B * weight);
+                pixels[p + 1] = (byte)Math.Min(255, pixels[p + 1] + c.G * weight);
+                pixels[p + 2] = (byte)Math.Min(255, pixels[p + 2] + c.R * weight);
             }
         }
         var bitmap=BitmapSource.Create(width,height,96,96,PixelFormats.Pbgra32,null,pixels,width*4);bitmap.Freeze();return bitmap;

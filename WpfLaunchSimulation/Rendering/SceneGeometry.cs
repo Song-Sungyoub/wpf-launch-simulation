@@ -107,33 +107,59 @@ public static class SceneGeometry
         return (h & 0xffff) / 65535.0;
     }
 
-    public static Model3DGroup Atmosphere()
+    // Translucent shells (~38 and ~76 km) tinting the Earth seen from above. Their flat facets sag ~7 km,
+    // so each shell fades out while the camera passes through it; otherwise a hard line crosses the sky.
+    public sealed class AtmosphereShells
     {
-        var group = new Model3DGroup();
-        foreach (var layer in new[] { (Radius: 1.006, Alpha: (byte)55), (Radius: 1.012, Alpha: (byte)18) })
+        private const double SagKm = 7.5, FadeBelowKm = 8, FadeAboveKm = 15;
+        private readonly (double TopKm, byte Alpha, SolidColorBrush Brush)[] layers;
+        public Model3DGroup Model { get; } = new();
+        public AtmosphereShells()
         {
-            var material = new MaterialGroup();
-            material.Children.Add(new DiffuseMaterial(Brushes.Transparent));
-            material.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromArgb(layer.Alpha, 65, 155, 255))));
-            material.Freeze();
-            var sphere = Sphere(layer.Radius, material, 96, 48);
-            sphere.Material = null; sphere.BackMaterial = material; sphere.Freeze(); group.Children.Add(sphere);
+            var specs = new[] { (Radius: 1.006, Alpha: (byte)55), (Radius: 1.012, Alpha: (byte)18) };
+            layers = new (double, byte, SolidColorBrush)[specs.Length];
+            for (int i = 0; i < specs.Length; i++)
+            {
+                var brush = new SolidColorBrush(Color.FromArgb(specs[i].Alpha, 65, 155, 255));
+                var sphere = Sphere(specs[i].Radius, new EmissiveMaterial(brush), 96, 48);
+                sphere.BackMaterial = sphere.Material; sphere.Material = null; Model.Children.Add(sphere);
+                layers[i] = ((specs[i].Radius - 1) * Earth.Radius / 1000, specs[i].Alpha, brush);
+            }
         }
-        group.Freeze(); return group;
+        public void Update(double cameraAltitudeKm)
+        {
+            foreach (var (top, alpha, brush) in layers)
+            {
+                double bottom = top - SagKm;
+                double f = Math.Max(1 - Smooth((cameraAltitudeKm - (bottom - FadeBelowKm)) / FadeBelowKm),
+                                    Smooth((cameraAltitudeKm - (top + 1)) / FadeAboveKm));
+                var a = (byte)Math.Round(alpha * f);
+                if (brush.Color.A != a) brush.Color = Color.FromArgb(a, 65, 155, 255);
+            }
+        }
+        private static double Smooth(double x) { x = Math.Clamp(x, 0, 1); return x * x * (3 - 2 * x); }
     }
 
     // Flat ribbon along a polyline, oriented to face outward from the Earth centre.
     public static MeshGeometry3D Ribbon(IReadOnlyList<Point3D> points, double width)
     {
-        var mesh = new MeshGeometry3D();
-        for (int i = 0; i < points.Count; i++)
+        // Bound display mesh size during long time-warp sessions; retain the complete source history.
+        int count = Math.Min(points.Count, 4096);
+        var mesh = new MeshGeometry3D { Positions = new Point3DCollection(count * 2), TriangleIndices = new Int32Collection(Math.Max(0, count - 1) * 6) };
+        for (int i = 0; i < count; i++)
         {
-            var tangent = points[Math.Min(i + 1, points.Count - 1)] - points[Math.Max(0, i - 1)];
-            var side = Vector3D.CrossProduct((Vector3D)points[i], tangent);
+            int index = count <= 1 ? 0 : (int)((long)i * (points.Count - 1) / (count - 1));
+            var tangent = points[Math.Min(index + 1, points.Count - 1)] - points[Math.Max(0, index - 1)];
+            var side = Vector3D.CrossProduct((Vector3D)points[index], tangent);
             if (side.LengthSquared < 1e-30) side = new Vector3D(1, 0, 0);
             side.Normalize();
-            mesh.Positions.Add(points[i] + side * width); mesh.Positions.Add(points[i] - side * width);
-            if (i > 0) { int n = (i - 1) * 2; foreach (int k in new[] { n, n + 2, n + 1, n + 1, n + 2, n + 3 }) mesh.TriangleIndices.Add(k); }
+            mesh.Positions.Add(points[index] + side * width); mesh.Positions.Add(points[index] - side * width);
+            if (i > 0)
+            {
+                int n = (i - 1) * 2;
+                mesh.TriangleIndices.Add(n); mesh.TriangleIndices.Add(n + 2); mesh.TriangleIndices.Add(n + 1);
+                mesh.TriangleIndices.Add(n + 1); mesh.TriangleIndices.Add(n + 2); mesh.TriangleIndices.Add(n + 3);
+            }
         }
         mesh.Freeze(); return mesh;
     }
@@ -141,7 +167,6 @@ public static class SceneGeometry
     public static Material MarkerMaterial(Color color)
     {
         var material = new MaterialGroup();
-        material.Children.Add(new DiffuseMaterial(Brushes.Black));
         material.Children.Add(new EmissiveMaterial(new SolidColorBrush(color)));
         material.Freeze();
         return material;

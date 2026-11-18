@@ -10,7 +10,7 @@ namespace WpfLaunchSimulation.Rendering;
 public static class EarthEffects
 {
     // City lights (NASA Black Marble) masked by darkness for a fixed sun direction (Earth-fixed, unit vector).
-    // The mask is baked once for liftoff; over a ~2 h session the terminator moves ~30° (accepted simplification).
+    // The mask is baked once for liftoff; over a ~2 h session the terminator moves ~30°.
     public static GeometryModel3D NightLights(Uri nightImage, Vec sunFixed)
     {
         var source = new BitmapImage(); source.BeginInit(); source.UriSource = nightImage; source.EndInit(); source.Freeze();
@@ -35,7 +35,6 @@ public static class EarthEffects
         }
         var bitmap = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, output, w * 4); bitmap.Freeze();
         var material = new MaterialGroup();
-        material.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
         material.Children.Add(new EmissiveMaterial(new ImageBrush(bitmap)));
         material.Freeze();
         var sphere = SceneGeometry.Sphere(1.0004, material, 160, 80); sphere.Freeze();
@@ -54,7 +53,6 @@ public static class EarthEffects
             mesh.TextureCoordinates = new PointCollection([new(0, 0), new(1, 0), new(1, 1), new(0, 1)]);
             mesh.TriangleIndices = new Int32Collection([0, 2, 1, 0, 3, 2]);
             var material = new MaterialGroup();
-            material.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
             material.Children.Add(new EmissiveMaterial(new ImageBrush(RingTexture())));
             material.Freeze();
             Model = new GeometryModel3D(mesh, material) { BackMaterial = material };

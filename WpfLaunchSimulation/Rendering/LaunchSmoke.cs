@@ -11,8 +11,8 @@ namespace WpfLaunchSimulation.Rendering;
 // translucent geometry in scene order without sorting. Puff counts, growth and lifetimes are chosen for the look.
 public sealed class LaunchSmoke
 {
-    private const int Count = 180;
-    private const double FirstPuff = -4.0, Interval = 0.12, Lifetime = 38;
+    private const int Count = 220;
+    private const double FirstPuff = -4.0, Interval = 0.10, Lifetime = 48;
     public Model3DGroup Root { get; } = new();
     private readonly (Vector3D Direction, double Speed, double Rise, double Size, bool Duct, int Variant, double Spin)[] puffs;
     private readonly (MeshGeometry3D Mesh, ImageBrush Brush, GeometryModel3D Model)[] slots;
@@ -31,7 +31,7 @@ public sealed class LaunchSmoke
             bool duct = i % 3 != 0;
             double a = duct ? (random.NextDouble() - 0.5) * 1.1 : random.NextDouble() * 2 * Math.PI;
             puffs[i] = (new Vector3D(Math.Sin(a), 0, Math.Cos(a)), duct ? 11 + random.NextDouble() * 8 : 4 + random.NextDouble() * 4,
-                1.2 + random.NextDouble() * 2.2, 0.8 + random.NextDouble() * 0.6, duct, random.Next(Textures.Length), random.NextDouble() * Math.PI * 2);
+                (duct ? 2.4 : 1.2) + random.NextDouble() * 3.6, 1.0 + random.NextDouble() * 0.65, duct, random.Next(Textures.Length), random.NextDouble() * Math.PI * 2);
         }
         slots = new (MeshGeometry3D, ImageBrush, GeometryModel3D)[Count];
         for (int k = 0; k < Count; k++)
@@ -65,7 +65,8 @@ public sealed class LaunchSmoke
                 double u = (x + 0.5) / size, v = (y + 0.5) / size, density = 0;
                 foreach (var b in blobs) { double d = Math.Sqrt((u - b.X) * (u - b.X) + (v - b.Y) * (v - b.Y)) / b.R; density += Math.Max(0, 1 - d * d); }
                 double edge = Math.Clamp(1 - Math.Sqrt((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5)) / 0.5, 0, 1);
-                double alpha = Math.Clamp(density * 0.6, 0, 1) * Math.Pow(edge, 0.6);
+                double turbulence = 0.65 + 0.6 * PadSurroundings.Fbm(u * 9 + seed * 13, v * 9, 4);
+                double alpha = Math.Clamp(density * turbulence * 0.6, 0, 1) * Math.Pow(edge, 0.6);
                 byte shade = (byte)(214 + 30 * Math.Clamp(1 - v, 0, 1)); // a little brighter on top
                 int p = (y * size + x) * 4; byte a = (byte)(alpha * 255);
                 pixels[p] = pixels[p + 1] = (byte)(shade * alpha); pixels[p + 2] = (byte)(Math.Min(255, shade + 4) * alpha); pixels[p + 3] = a;
@@ -104,11 +105,14 @@ public sealed class LaunchSmoke
             var puff = puffs[i];
             double radius = Radius(i, age);
             var center = Center(i, age);
-            double c = Math.Cos(puff.Spin), s = Math.Sin(puff.Spin);
+            double spin = puff.Spin + Math.Sin(age * 0.32 + i) * 0.22;
+            double c = Math.Cos(spin), s = Math.Sin(spin);
             var ax = (right * c + up * s) * radius; var ay = (-right * s + up * c) * radius;
+            model.Geometry = null;
             mesh.Positions[0] = center - ax + ay; mesh.Positions[1] = center + ax + ay; mesh.Positions[2] = center + ax - ay; mesh.Positions[3] = center - ax - ay;
             var normal = camera - center; normal.Normalize();
             for (int n = 0; n < 4; n++) mesh.Normals[n] = normal;
+            model.Geometry = mesh;
             if (brush.ImageSource != Textures[puff.Variant]) { brush.ImageSource = Textures[puff.Variant]; emissive.ImageSource = Textures[puff.Variant]; }
             double opacity = 0.9 * Math.Clamp(age / 0.6, 0, 1) * Math.Pow(Math.Clamp(1 - age / Lifetime, 0, 1), 1.4);
             brush.Opacity = opacity; emissive.Opacity = opacity * 0.35;
@@ -124,6 +128,8 @@ public sealed class LaunchSmoke
         var origin = puff.Duct ? new Point3D(0, 2, 40) : new Point3D(0, 1, 0);
         // Centres sit high enough that the visible part of each puff stays above the deck; a billboard cutting into the
         // ground shows a hard straight edge.
-        return origin + puff.Direction * travel + new Vector3D(0, radius * 0.75 + puff.Rise * age, 0);
+        // Shared deterministic wind for both cameras and replay, with slow lateral turbulence.
+        var wind = new Vector3D(age * 2.2 + Math.Sin(age * 0.35 + i) * age * 0.3, 0, age * 0.6);
+        return origin + puff.Direction * travel + wind + new Vector3D(0, radius * 0.75 + puff.Rise * age, 0);
     }
 }

@@ -32,6 +32,19 @@ internal static class NuriTextures
                 byte shade = (byte)(220 + random.Next(16));
                 dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(40, shade, shade, (byte)(shade + 4))), null, new Rect(x, 0, w, height));
             }
+            // Patchy frost around the LOX tank skin, baked into the opaque colour.
+            if (!fairing && length > 8)
+            {
+                var frost = new Random(flag ? 107 : 211);
+                for (int k = 0; k < 220; k++)
+                {
+                    double x = frost.NextDouble() * width;
+                    double top = frost.NextDouble() * height * 0.48;
+                    double w = 1 + frost.NextDouble() * 7, h = height * (0.015 + frost.NextDouble() * 0.12);
+                    dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb((byte)frost.Next(65, 165), 255, 255, 253)), null,
+                        new Rect(x, top, w, h), w * 0.5, w * 0.5);
+                }
+            }
             var seamPen = new Pen(new SolidColorBrush(Color.FromRgb(168, 172, 178)), 2.2);
             foreach (double s in seams) dc.DrawLine(seamPen, new Point(0, s * PixelsPerMetre), new Point(width, s * PixelsPerMetre));
             if (fairing) dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(150, 154, 160)), 3), new Point(width * 0.25, 0), new Point(width * 0.25, height));

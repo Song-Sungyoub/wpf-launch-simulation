@@ -6,9 +6,10 @@ namespace WpfLaunchSimulation.Rendering;
 
 // Nuri in metres: +Y is the long axis, origin at the base of stage 1. Proportions from public figures
 // (overall 47.2 m, stage 1 Ø3.5 m, stages 2-3 Ø2.6 m); internal layout and colours are illustrative.
-public sealed class NuriModel
+public sealed partial class NuriModel
 {
     public const double Stage1Top = 21.6, AdapterTop = 23.6, Stage2Top = 36.0, Stage3Top = 42.2, FairingTop = 47.2;
+    public const double FairingBase = Stage3Top - 1.4;
     public const double Stage1Radius = 1.75, UpperRadius = 1.3;
     public Model3DGroup Root { get; } = new();
     public Model3DGroup Stage1 { get; } = new();
@@ -17,8 +18,12 @@ public sealed class NuriModel
     public Model3DGroup FairingLeft { get; } = new();
     public Model3DGroup FairingRight { get; } = new();
     public Model3DGroup Payload { get; } = new();
+    public Model3DGroup MassSimulator { get; } = new();
     public ScaleTransform3D[] Plumes { get; } = [new(), new(), new()];
     public Model3DGroup[] PlumeModels { get; } = [new(), new(), new()];
+
+    private readonly Dictionary<MeshGeometry3D, Point3D[]> plumeVertices = [];
+    private readonly double[] plumeExpansion = [double.NaN, double.NaN, double.NaN];
 
     private static readonly Material White = Lit(Color.FromRgb(232, 235, 238));
     private static readonly Material Grey = Lit(Color.FromRgb(70, 74, 82));
@@ -43,15 +48,18 @@ public sealed class NuriModel
         Stage2.Children.Add(Cylinder(Stage2Top - 0.5, Stage2Top, UpperRadius + 0.01, UpperRadius + 0.01, Dark, segments: 48));
         // Stage 3 with a small nozzle.
         foreach (var part in EngineParts(0, 0, 0.5, engine, chamber, top: Stage2Top)) Stage3.Children.Add(part);
-        Stage3.Children.Add(Skin(Stage2Top, Stage3Top, UpperRadius, NuriTextures.Stage3.Value));
+        Stage3.Children.Add(Skin(Stage2Top, Stage3Top - 1.4, UpperRadius, NuriTextures.Stage3.Value));
+        AddUpperStageDeck();
         // Payload (gold box) inside the fairing.
-        Payload.Children.Add(new SatelliteModel().Root); // stowed satellite inside the fairing
+        Payload.Children.Add(new SatelliteModel().Root);
+        MassSimulator.Children.Add(new MassSimulatorModel().Root);
+        AddExternalDetails();
         // Fairing halves: textured cylinder + ogive nose, split along the X axis.
         double[] noseY = [44.2, 45.3, 46.2, 46.8, FairingTop];
         double[] noseR = [UpperRadius, 1.18, 0.86, 0.5, 0.1];
         foreach (var (half, sign) in new[] { (FairingLeft, -1.0), (FairingRight, 1.0) })
         {
-            half.Children.Add(HalfShell(Stage3Top, 44.2, UpperRadius, UpperRadius, sign, new DiffuseMaterial(NuriTextures.Fairing.Value), textured: true));
+            half.Children.Add(HalfShell(FairingBase, 44.2, UpperRadius, UpperRadius, sign, new DiffuseMaterial(NuriTextures.Fairing.Value), textured: true));
             for (int k = 0; k + 1 < noseY.Length; k++) half.Children.Add(HalfShell(noseY[k], noseY[k + 1], noseR[k], noseR[k + 1], sign, White));
         }
         double[] plumeBase = [-2.0, AdapterTop - 2.9, Stage2Top - 1.0];
@@ -59,15 +67,44 @@ public sealed class NuriModel
         for (int i = 0; i < 3; i++)
         {
             // Hot white core and a longer orange envelope, both fading to transparent toward the tail.
-            var core = PlumeCone(plumeRadius[i], plumeRadius[i] * 0.25, 1.0, Glow(Color.FromArgb(150, 255, 196, 110), Color.FromArgb(70, 255, 150, 70), Color.FromArgb(0, 255, 120, 60)));
-            var inner = PlumeCone(plumeRadius[i] * 0.6, plumeRadius[i] * 0.12, 0.4, Glow(Color.FromArgb(240, 255, 252, 235), Color.FromArgb(170, 255, 228, 160), Color.FromArgb(0, 255, 210, 140)));
-            PlumeModels[i].Children.Add(inner); PlumeModels[i].Children.Add(core);
+            var exits = i == 0 ? new[] { (X: -0.8, Z: -0.8), (X: -0.8, Z: 0.8), (X: 0.8, Z: -0.8), (X: 0.8, Z: 0.8) } : new[] { (X: 0.0, Z: 0.0) };
+            foreach (var exit in exits)
+            {
+                double radius = i == 0 ? 0.52 : plumeRadius[i];
+                var core = PlumeCone(radius, radius * 0.35, 1.0, Glow(Color.FromArgb(170, 255, 194, 100), Color.FromArgb(90, 255, 140, 50), Color.FromArgb(0, 255, 110, 40)));
+                var inner = PlumeCone(radius * 0.65, radius * 0.10, 0.6, Glow(Color.FromArgb(250, 255, 253, 238), Color.FromArgb(195, 255, 231, 171), Color.FromArgb(0, 255, 220, 140)));
+                foreach (var part in new[] { inner, core })
+                {
+                    var mesh = ((MeshGeometry3D)part.Geometry).Clone();
+                    part.Geometry = mesh; plumeVertices[mesh] = mesh.Positions.ToArray();
+                    part.Transform = new TranslateTransform3D(exit.X, 0, exit.Z);
+                    PlumeModels[i].Children.Add(part);
+                }
+            }
             // Scale Y = plume length; translated to the nozzle exit.
             var transforms = new Transform3DGroup();
             transforms.Children.Add(Plumes[i]); transforms.Children.Add(new TranslateTransform3D(0, plumeBase[i], 0));
             PlumeModels[i].Transform = transforms;
         }
-        foreach (var part in new Model3D[] { Stage1, Stage2, Stage3, Payload, FairingLeft, FairingRight }) Root.Children.Add(part);
+        foreach (var part in new Model3D[] { Stage1, Stage2, Stage3, MassSimulator, Payload, FairingLeft, FairingRight }) Root.Children.Add(part);
+    }
+
+    // Keep nozzle width fixed while the downstream plume expands in thinner air.
+    public void ExpandPlume(int stage, double expansion)
+    {
+        if (Math.Abs(plumeExpansion[stage] - expansion) < 0.002) return;
+        plumeExpansion[stage] = expansion;
+        foreach (GeometryModel3D part in PlumeModels[stage].Children)
+        {
+            var mesh = (MeshGeometry3D)part.Geometry; var original = plumeVertices[mesh];
+            var positions = new Point3DCollection(original.Length);
+            for (int k = 0; k < original.Length; k++)
+            {
+                double factor = 1 + (expansion - 1) * mesh.TextureCoordinates[k].Y;
+                var p = original[k]; positions.Add(new Point3D(p.X * factor, p.Y, p.Z * factor));
+            }
+            positions.Freeze(); mesh.Positions = positions;
+        }
     }
 
     // Bell nozzle of exit radius `scale`·0.55 m with a short combustion chamber; `top` is the engine mount plane.
@@ -80,7 +117,7 @@ public sealed class NuriModel
             yield return Cylinder(top + y[k] * scale, top + y[k + 1] * scale, r[k] * scale, r[k + 1] * scale, bell, x, z, 24);
     }
 
-    private static GeometryModel3D Skin(double y0, double y1, double radius, ImageBrush texture, int segments = 64)
+    private static Model3DGroup Skin(double y0, double y1, double radius, ImageBrush texture, int segments = 64)
     {
         var material = new MaterialGroup();
         material.Children.Add(new DiffuseMaterial(texture));
@@ -94,9 +131,29 @@ public sealed class NuriModel
             mesh.Positions.Add(new Point3D(radius * c, y0, radius * s)); mesh.Normals.Add(normal); mesh.TextureCoordinates.Add(new System.Windows.Point(1 - (double)i / segments, 1));
             mesh.Positions.Add(new Point3D(radius * c, y1, radius * s)); mesh.Normals.Add(normal); mesh.TextureCoordinates.Add(new System.Windows.Point(1 - (double)i / segments, 0));
         }
-        for (int i = 0; i < segments; i++) { int a = i * 2, b = a + 2; foreach (int k in new[] { a, b, a + 1, a + 1, b, b + 1 }) mesh.TriangleIndices.Add(k); }
+        for (int i = 0; i < segments; i++) { int a = i * 2, b = a + 2; foreach (int k in new[] { a, a + 1, b, b, a + 1, b + 1 }) mesh.TriangleIndices.Add(k); }
         mesh.Freeze();
-        return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        var shell = new Model3DGroup();
+        shell.Children.Add(new GeometryModel3D(mesh, material));
+        // Opaque tank bulkheads close the stage: separated hardware must not be a see-through tube.
+        shell.Children.Add(Bulkhead(y0, radius, false, segments));
+        shell.Children.Add(Bulkhead(y1, radius, true, segments));
+        return shell;
+    }
+
+    private static GeometryModel3D Bulkhead(double y, double radius, bool up, int segments)
+    {
+        var mesh = new MeshGeometry3D();
+        var normal = new Vector3D(0, up ? 1 : -1, 0);
+        mesh.Positions.Add(new Point3D(0, y, 0)); mesh.Normals.Add(normal);
+        for (int i = 0; i <= segments; i++)
+        {
+            double a = 2 * Math.PI * i / segments;
+            mesh.Positions.Add(new Point3D(radius * Math.Cos(a), y, radius * Math.Sin(a))); mesh.Normals.Add(normal);
+        }
+        for (int i = 0; i < segments; i++)
+            foreach (int k in up ? new[] { 0, i + 2, i + 1 } : new[] { 0, i + 1, i + 2 }) mesh.TriangleIndices.Add(k);
+        mesh.Freeze(); return new GeometryModel3D(mesh, Grey);
     }
 
     private static Material Glow(Color start, Color middle, Color end)
@@ -137,7 +194,7 @@ public sealed class NuriModel
         for (int i = 0; i <= segments; i++)
         {
             double a = 2 * Math.PI * i / segments, c = Math.Cos(a), s = Math.Sin(a);
-            var normal = new Vector3D(c, (r0 - r1) / Math.Max(Math.Abs(y1 - y0), 1e-6), s); normal.Normalize();
+            var normal = new Vector3D(c, (r0 - r1) / (Math.Abs(y1 - y0) < 1e-6 ? 1e-6 : y1 - y0), s); normal.Normalize();
             mesh.Positions.Add(new Point3D(x + r0 * c, y0, z + r0 * s)); mesh.Normals.Add(normal);
             mesh.Positions.Add(new Point3D(x + r1 * c, y1, z + r1 * s)); mesh.Normals.Add(normal);
         }
@@ -145,13 +202,13 @@ public sealed class NuriModel
         for (int i = 0; i < segments; i++)
         {
             int a = i * 2, b = a + 2;
-            int[] tri = flip ? [a, a + 1, b, b, a + 1, b + 1] : [a, b, a + 1, a + 1, b, b + 1];
+            int[] tri = flip ? [a, b, a + 1, a + 1, b, b + 1] : [a, a + 1, b, b, a + 1, b + 1];
             foreach (int k in tri) mesh.TriangleIndices.Add(k);
         }
         // Caps.
         foreach (var (y, r, up) in new[] { (y0, r0, false), (y1, r1, true) })
         {
-            if (r < 0.05) continue;
+            if (r < 1e-7) continue;
             int center = mesh.Positions.Count; var n = new Vector3D(0, up ^ flip ? 1 : -1, 0);
             mesh.Positions.Add(new Point3D(x, y, z)); mesh.Normals.Add(n);
             for (int i = 0; i <= segments; i++)
@@ -166,32 +223,70 @@ public sealed class NuriModel
             }
         }
         mesh.Freeze();
-        return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        return new GeometryModel3D(mesh, material);
     }
 
-    private static GeometryModel3D HalfShell(double y0, double y1, double r0, double r1, double sign, Material material, int segments = 24, bool textured = false)
+    // Outer skin, inner liner and cut-edge rims, so the shell has thickness.
+    private static Model3DGroup HalfShell(double y0, double y1, double r0, double r1, double sign, Material material, int segments = 32, bool textured = false)
     {
-        var mesh = new MeshGeometry3D();
-        for (int i = 0; i <= segments; i++)
+        const double thickness = 0.025;
+        var result = new Model3DGroup();
+        var liner = Lit(Color.FromRgb(160, 164, 167));
+        Point3D At(double y, double radius, int i)
         {
-            double a = Math.PI * i / segments - Math.PI / 2, c = Math.Cos(a) * sign, s = Math.Sin(a);
-            var normal = new Vector3D(c, (r0 - r1) / (y1 - y0), s); normal.Normalize();
-            mesh.Positions.Add(new Point3D(r0 * c, y0, r0 * s)); mesh.Normals.Add(normal);
-            mesh.Positions.Add(new Point3D(r1 * c, y1, r1 * s)); mesh.Normals.Add(normal);
-            if (textured)
+            double a = Math.PI * i / segments - Math.PI / 2;
+            return new Point3D(radius * Math.Cos(a) * sign, y, radius * Math.Sin(a));
+        }
+        foreach (bool inside in new[] { false, true })
+        {
+            var mesh = new MeshGeometry3D();
+            double low = inside ? r0 - thickness : r0, high = inside ? r1 - thickness : r1;
+            for (int i = 0; i <= segments; i++)
             {
+                double a = Math.PI * i / segments - Math.PI / 2;
+                var normal = new Vector3D(Math.Cos(a) * sign, (r0 - r1) / (y1 - y0), Math.Sin(a));
+                normal.Normalize(); if (inside) normal = -normal;
+                mesh.Positions.Add(At(y0, low, i)); mesh.Normals.Add(normal);
+                mesh.Positions.Add(At(y1, high, i)); mesh.Normals.Add(normal);
                 double u = 1 - ((double)i / segments * 0.5 + (sign > 0 ? 0 : 0.5));
-                mesh.TextureCoordinates.Add(new System.Windows.Point(u, 1)); mesh.TextureCoordinates.Add(new System.Windows.Point(u, 0));
+                mesh.TextureCoordinates.Add(new Point(u, 1)); mesh.TextureCoordinates.Add(new Point(u, 0));
+            }
+            for (int i = 0; i < segments; i++)
+            {
+                int a = i * 2, b = a + 2;
+                int[] tri = (sign > 0) != inside ? [a, a + 1, b, b, a + 1, b + 1] : [a, b, a + 1, a + 1, b, b + 1];
+                foreach (int k in tri) mesh.TriangleIndices.Add(k);
+            }
+            mesh.Freeze();
+            result.Children.Add(new GeometryModel3D(mesh, inside ? liner : material));
+        }
+        var rims = new MeshGeometry3D();
+        void Quad(Point3D a, Point3D b, Point3D c, Point3D d, Vector3D normal)
+        {
+            int n = rims.Positions.Count;
+            foreach (var point in new[] { a, b, c, d }) { rims.Positions.Add(point); rims.Normals.Add(normal); }
+            bool forward = Vector3D.DotProduct(Vector3D.CrossProduct(b - a, c - a), normal) >= 0;
+            int[] indices = forward ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+            for (int k = 0; k < indices.Length; k += 3)
+            {
+                var pa = rims.Positions[n + indices[k]]; var pb = rims.Positions[n + indices[k + 1]]; var pc = rims.Positions[n + indices[k + 2]];
+                if (Vector3D.CrossProduct(pb - pa, pc - pa).LengthSquared < 1e-20) continue;
+                for (int j = 0; j < 3; j++) rims.TriangleIndices.Add(n + indices[k + j]);
             }
         }
-        for (int i = 0; i < segments; i++)
-        {
-            int a = i * 2, b = a + 2;
-            int[] tri = sign > 0 ? [a, b, a + 1, a + 1, b, b + 1] : [a, a + 1, b, b, a + 1, b + 1];
-            foreach (int k in tri) mesh.TriangleIndices.Add(k);
-        }
-        mesh.Freeze();
-        return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        foreach (int i in new[] { 0, segments })
+            Quad(At(y0, r0, i), At(y1, r1, i), At(y1, r1 - thickness, i), At(y0, r0 - thickness, i), new Vector3D(-sign, 0, 0));
+        if (y0 == FairingBase)
+            for (int i = 0; i < segments; i++)
+                Quad(At(y0, r0, i), At(y0, r0, i + 1), At(y0, r0 - thickness, i + 1), At(y0, r0 - thickness, i), new Vector3D(0, -1, 0));
+        if (y1 == FairingTop)
+            for (int i = 0; i < segments; i++)
+            {
+                Quad(new Point3D(0, y1, 0), At(y1, r1, i), At(y1, r1, i + 1), new Point3D(0, y1, 0), new Vector3D(0, 1, 0));
+                Quad(new Point3D(0, y1, 0), At(y1, r1 - thickness, i), At(y1, r1 - thickness, i + 1), new Point3D(0, y1, 0), new Vector3D(0, -1, 0));
+            }
+        rims.Freeze(); result.Children.Add(new GeometryModel3D(rims, liner));
+        return result;
     }
 
     public static GeometryModel3D Box(double cx, double cy, double cz, double sx, double sy, double sz, Material material)
@@ -202,13 +297,14 @@ public sealed class NuriModel
             int b = mesh.Positions.Count; var c = new Point3D(cx, cy, cz) + new Vector3D(n.X * sx / 2, n.Y * sy / 2, n.Z * sz / 2);
             var du = new Vector3D(u.X * sx / 2, u.Y * sy / 2, u.Z * sz / 2); var dv = new Vector3D(v.X * sx / 2, v.Y * sy / 2, v.Z * sz / 2);
             foreach (var p in new[] { c - du - dv, c + du - dv, c + du + dv, c - du + dv }) { mesh.Positions.Add(p); mesh.Normals.Add(n); }
+            foreach (var uv in new System.Windows.Point[] { new(0, 1), new(1, 1), new(1, 0), new(0, 0) }) mesh.TextureCoordinates.Add(uv);
             foreach (int k in new[] { 0, 1, 2, 0, 2, 3 }) mesh.TriangleIndices.Add(b + k);
         }
         Face(new(1, 0, 0), new(0, 0, -1), new(0, 1, 0)); Face(new(-1, 0, 0), new(0, 0, 1), new(0, 1, 0));
         Face(new(0, 1, 0), new(1, 0, 0), new(0, 0, -1)); Face(new(0, -1, 0), new(1, 0, 0), new(0, 0, 1));
         Face(new(0, 0, 1), new(1, 0, 0), new(0, 1, 0)); Face(new(0, 0, -1), new(-1, 0, 0), new(0, 1, 0));
         mesh.Freeze();
-        return new GeometryModel3D(mesh, material) { BackMaterial = material };
+        return new GeometryModel3D(mesh, material);
     }
 
     // Separate copies for separated hardware.
@@ -232,7 +328,7 @@ public sealed class NuriModel
 // Naro launch complex 2 in local metres: +Y up, +X east, +Z south. From public photos: a green lattice umbilical
 // tower (45~48 m, sources differ) with four service arms beside a raised launch deck. Truss layout, lightning masts,
 // flame-trench direction and service buildings are illustrative, not drawings.
-public static class PadModel
+public static partial class PadModel
 {
     public static readonly Rect ApronArea = new(-85, -75, 170, 150), DeckArea = new(-15, -15, 30, 30);
     public static readonly Color DeckColor = Color.FromRgb(118, 116, 110);
@@ -247,7 +343,7 @@ public static class PadModel
         var green = NuriModel.Lit(Color.FromRgb(46, 118, 68));
         var steel = NuriModel.Lit(Color.FromRgb(120, 124, 130));
         var white = NuriModel.Lit(Color.FromRgb(226, 226, 222));
-        var red = NuriModel.Lit(Color.FromRgb(190, 60, 52));
+        var red = NuriModel.Lit(Color.FromRgb(211, 99, 35));
 
         // Apron, raised deck and launch table (rocket base at y = 0).
         // Box tops sit a little below the textured top surfaces so the two never fight in the depth buffer.
@@ -306,6 +402,7 @@ public static class PadModel
         group.Children.Add(PadSurroundings.Building(48, 2.5, 28, 14, 7, 10, Color.FromRgb(196, 204, 210)));
         group.Children.Add(NuriModel.Box(48, 6.1, 28, 14.3, 0.3, 10.3, steel));
         group.Children.Add(NuriModel.Box(40, 0, -55, 10, 2.5, 6, steel));
+        AddPhotoDetails(group, tx, half, green, steel, white);
         return group;   // not frozen: the vehicle-shadow overlay brush changes every frame
     }
 

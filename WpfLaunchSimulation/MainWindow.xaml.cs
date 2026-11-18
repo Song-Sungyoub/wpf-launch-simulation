@@ -11,21 +11,52 @@ public partial class MainWindow : Window
     private readonly MainViewModel viewModel = new();
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private Point? lastPointer;
+    private TimeSpan lastRenderingTime = TimeSpan.MinValue;
+    private double performanceStart = double.NaN, previousFrame = double.NaN, maxFrameGap, updateTotal;
+    private int performanceFrames;
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.InsetVisibility)) UpdateSceneInsets(); };
         // Screen-space bloom, tone and vignette on the 3D layers only (not the HUD panels drawn over them).
-        if (Rendering.PostEffect.Available) { MainScene.Effect = new Rendering.PostEffect(); InsetScene.Effect = new Rendering.PostEffect { Vignette = 0.12 }; }
+        if (Rendering.PostEffect.Available)
+        {
+            var effect = new Rendering.PostEffect();
+            System.Windows.Data.BindingOperations.SetBinding(effect, Rendering.PostEffect.BloomProperty,
+                new System.Windows.Data.Binding(nameof(MainViewModel.BloomStrength)) { Source = viewModel });
+            var insetEffect = new Rendering.PostEffect { Vignette = 0.12, Bloom = 0 };
+            void ApplyEffects() { MainScene.Effect = viewModel.PostProcessingOn ? effect : null; InsetScene.Effect = viewModel.PostProcessingOn ? insetEffect : null; TrackingScene.Effect = viewModel.PostProcessingOn ? insetEffect : null; }
+            ApplyEffects();
+            viewModel.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.PostProcessingOn)) ApplyEffects(); };
+        }
         CompositionTarget.Rendering += OnRendering;
         Closed += (_, _) => CompositionTarget.Rendering -= OnRendering;
     }
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        viewModel.Tick(clock.Elapsed.TotalSeconds);
+        // WPF may raise Rendering repeatedly for one composition timestamp.
+        if (e is RenderingEventArgs rendering)
+        {
+            if (rendering.RenderingTime == lastRenderingTime) return;
+            lastRenderingTime = rendering.RenderingTime;
+        }
+        double now = clock.Elapsed.TotalSeconds;
+        if (double.IsNaN(performanceStart)) performanceStart = now;
+        if (!double.IsNaN(previousFrame)) maxFrameGap = Math.Max(maxFrameGap, now - previousFrame);
+        previousFrame = now;
+        long started = Stopwatch.GetTimestamp();
+        viewModel.Tick(now);
         if (timelineProgress is not null) timelineProgress.Width = MainViewModel.TimelineFraction(viewModel.MissionTime) * TimelineCanvas.ActualWidth;
+        updateTotal += Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        performanceFrames++;
+        if (now - performanceStart >= 1)
+        {
+            viewModel.SetPerformance(performanceFrames / (now - performanceStart), maxFrameGap * 1000, updateTotal / performanceFrames);
+            performanceStart = now; performanceFrames = 0; maxFrameGap = updateTotal = 0;
+        }
     }
 
     // Timeline drawing is view-only: track, progress, event ticks and labels.
@@ -35,15 +66,15 @@ public partial class MainWindow : Window
         var canvas = TimelineCanvas; canvas.Children.Clear();
         double w = canvas.ActualWidth;
         var track = new System.Windows.Shapes.Rectangle { Width = w, Height = 4, Fill = new SolidColorBrush(Color.FromRgb(36, 51, 75)), RadiusX = 2, RadiusY = 2 };
-        System.Windows.Controls.Canvas.SetTop(track, 36); canvas.Children.Add(track);
+        System.Windows.Controls.Canvas.SetTop(track, 54); canvas.Children.Add(track);
         timelineProgress = new System.Windows.Shapes.Rectangle { Height = 4, Fill = new SolidColorBrush(Color.FromRgb(101, 222, 224)), RadiusX = 2, RadiusY = 2 };
-        System.Windows.Controls.Canvas.SetTop(timelineProgress, 36); canvas.Children.Add(timelineProgress);
-        double[] rowTops = [17, 2, -13]; var rowRight = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
+        System.Windows.Controls.Canvas.SetTop(timelineProgress, 54); canvas.Children.Add(timelineProgress);
+        double[] rowTops = [35, 19, 3]; var rowRight = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
         foreach (var mark in viewModel.TimelineMarks)
         {
             double x = MainViewModel.TimelineFraction(mark.Time) * w;
             var tick = new System.Windows.Shapes.Rectangle { Width = 2, Height = 10, Fill = new SolidColorBrush(Color.FromRgb(255, 211, 90)), IsHitTestVisible = false };
-            System.Windows.Controls.Canvas.SetLeft(tick, x - 1); System.Windows.Controls.Canvas.SetTop(tick, 33); canvas.Children.Add(tick);
+            System.Windows.Controls.Canvas.SetLeft(tick, x - 1); System.Windows.Controls.Canvas.SetTop(tick, 51); canvas.Children.Add(tick);
             // Each mark is a button (keyboard and UI Automation can use it); close labels alternate between two rows.
             var button = new System.Windows.Controls.Button
             {
@@ -83,6 +114,26 @@ public partial class MainWindow : Window
         foreach (var mark in viewModel.TimelineMarks)
             if (Math.Abs(MainViewModel.TimelineFraction(mark.Time) * w - e.GetPosition(TimelineCanvas).X) < 12) { t = mark.Time - 3; break; }
         viewModel.JumpTo(t);
+    }
+
+    private void OnSceneSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (InsetButton is null) return;
+        InsetButton.Width = Math.Min(384, Math.Max(120, e.NewSize.Width * 0.42));
+        InsetButton.Height = Math.Min(InsetButton.Width * 9 / 16, Math.Max(70, e.NewSize.Height * 0.28));
+        UpdateSceneInsets();
+    }
+
+    private void UpdateSceneInsets()
+    {
+        if (MainScene is null || InsetButton is null) return;
+        // Reserve a bottom strip rather than painting the inset over the vehicle.
+        MainScene.Margin = new Thickness(0, 0, 0, viewModel.InsetVisibility == Visibility.Visible ? InsetButton.Height + 96 : 0);
+    }
+
+    private void OnMainSceneSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.NewSize.Width > 0 && e.NewSize.Height > 0) viewModel.SetViewportAspect(e.NewSize.Width / e.NewSize.Height);
     }
 
     private void OnPointerDown(object sender, MouseButtonEventArgs e) { lastPointer = e.GetPosition(InputSurface); InputSurface.CaptureMouse(); }

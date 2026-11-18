@@ -145,13 +145,13 @@ public sealed class AscentSimulator
         if (!payloadSeparated && Time >= NuriFlight2.SatelliteSeparation)
         {
             payloadSeparated = true;
-            Debris.Add(new Debris("성능검증위성", 180, 1, Position, Velocity + Velocity.Unit * 0.5, 4));
+            Debris.Add(new Debris("성능검증위성", NuriFlight2.PerformanceSatelliteKg, 1, Position, Velocity + Velocity.Unit * 0.5, 4));
             Raise(Time, "성능검증위성 분리", Altitude);
         }
         if (!dummySeparated && Time >= NuriFlight2.DummySeparation)
         {
             dummySeparated = true;
-            Debris.Add(new Debris("위성모사체", 1320, 2, Position, Velocity + Velocity.Unit * 0.3, 5));
+            Debris.Add(new Debris("위성모사체", NuriFlight2.PayloadKg - NuriFlight2.PerformanceSatelliteKg, 2, Position, Velocity + Velocity.Unit * 0.3, 5));
             Raise(Time, "위성모사체 분리", Altitude);
         }
     }

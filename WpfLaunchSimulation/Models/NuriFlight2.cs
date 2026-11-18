@@ -25,6 +25,7 @@ public static class NuriFlight2
     // KRE-007: 68.7 kN, Isp 325.1 s (≈21.55 kg/s), planned burn 521 s.
     public static readonly StageSpec Stage3 = new("3단", 11.2e3, 1.8e3, 21.55, 68.7e3, 68.7e3, 2.6, 7.0);
     public const double FairingKg = 750;        // [근사]
+    public const double PerformanceSatelliteKg = 162.5; // KARI published PVSAT mass
     public const double PayloadKg = 1500;       // performance verification satellite + mass simulator/adapter (KARI)
 
     public const double TargetAltitudeM = 700e3, TargetInclinationDeg = 98.2;

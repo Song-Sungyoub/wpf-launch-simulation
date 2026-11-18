@@ -6,12 +6,8 @@ using System.Windows.Media.Media3D;
 
 namespace WpfLaunchSimulation.Rendering;
 
-// Fake cast shadows on the pad (WPF 3D has no shadow maps), in pad-local metres (+Y up). Static structures are projected
-// along the sunlight onto the apron and deck planes and rasterised into one soft texture per plane, so overlapping
-// parts do not darken twice; contact darkening around footprints goes into the same texture. The shadows are painted
-// into the apron/deck surface brushes themselves (a separate translucent layer would fight the surface in the depth
-// buffer, and extra material layers in WPF add light, so they cannot darken). The vehicle's shadow is a strip drawing
-// in those brushes that follows it until it is too high to cast a visible one.
+// Cast shadows on the pad (WPF 3D has no shadow maps), in pad-local metres. Structures are projected along
+// the sunlight and painted into the apron and deck brushes, plus a moving strip for the vehicle.
 public static class PadShadows
 {
     public const double ApronY = -1.0, DeckY = 0.0;
@@ -75,8 +71,7 @@ public static class PadShadows
             {
                 if (tri.All(v => v.Y < plane + 0.05)) continue;
                 Point a = ToPixel(Project(tri[0], sun, plane)), b = ToPixel(Project(tri[1], sun, plane)), c = ToPixel(Project(tri[2], sun, plane));
-                // Front and back faces of a solid project with opposite winding and would cancel under the nonzero rule;
-                // give every triangle the same winding so overlaps add up instead.
+                // Same winding for every triangle, so overlaps add up instead of cancelling.
                 if ((b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X) < 0) (b, c) = (c, b);
                 ctx.BeginFigure(a, true, true);
                 ctx.PolyLineTo([b, c], false, false);
@@ -95,8 +90,7 @@ public static class PadShadows
                     dc.DrawRoundedRectangle(soft, null, new Rect(ToPixel(new Point(x - sx / 2, z - sz / 2)), new Size(sx * PixelsPerMetre, sz * PixelsPerMetre)), 12, 12);
             }
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb((byte)(255 * ShadowAlpha), 0, 0, 0)), null, geometry);
-            // The lattice tower: from a distance its members and their shadows merge into a dappled band, so add the
-            // projected outline of the whole tower at low density on top of the member shadows.
+            // Low-density outline of the whole tower over the member shadows.
             var tower = new StreamGeometry();
             using (var ctx = tower.Open())
             {
@@ -115,9 +109,7 @@ public static class PadShadows
         return drawing;
     }
 
-    // The vehicle's shadow: a soft strip from where its base projects, along the sunlight, as long as its projected
-    // length; it fades as the vehicle climbs (the umbra shrinks and the shadow leaves the pad). The axis tilt during the
-    // first ~250 m is small and ignored. One drawing is shared by the deck and apron brushes.
+    // Vehicle shadow: a soft strip along the sunlight that fades as the vehicle climbs.
     public sealed class Rocket
     {
         private readonly RectangleGeometry strip = new();

@@ -23,7 +23,7 @@ public sealed partial class MainViewModel
     public ICommand SwapInsetCommand => swapInsetCommand ??= new ActionCommand(() =>
     {
         if (InsetVisibility != Visibility.Visible) return;
-        cameraMode = insetMode; Notify(nameof(CameraText));
+        cameraMode = insetMode; displayDirty = true; Notify(nameof(CameraText));
     });
     private ICommand? swapInsetCommand;
 
@@ -35,9 +35,9 @@ public sealed partial class MainViewModel
         if (!show) return;
         var mode = view == CameraMode.Chase ? CameraMode.Onboard : CameraMode.Chase;
         if (mode != insetMode) { insetMode = mode; Notify(nameof(InsetLabel)); }
-        var spec = ComputeView(mode, t, center, up);
+        var spec = ComputeView(mode, t, center, up, 16.0 / 9);
         InsetCameraPosition = new Point3D(spec.Eye.X - origin.X, spec.Eye.Y - origin.Y, spec.Eye.Z - origin.Z);
-        InsetLookDirection = spec.Look; InsetUpDirection = up; InsetFieldOfView = spec.Fov;
+        InsetLookDirection = spec.Look; InsetUpDirection = spec.Up ?? up; InsetFieldOfView = spec.Fov;
         double altitude = Math.Max(((Vector3D)spec.Eye).Length * R - R, 1);
         InsetFarNearPlane = Math.Max(altitude * 0.3, Math.Max(spec.NearMeters, 2)) / R;
         InsetFarFarPlane = ((Vector3D)spec.Eye).Length + 1.3;

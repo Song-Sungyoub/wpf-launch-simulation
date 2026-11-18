@@ -26,25 +26,32 @@ public sealed class PostEffect : ShaderEffect
         {
             float4 c = tex2D(input, uv);
             float2 px = float2(ddxDdy.x, ddxDdy.w);
-            // Bloom: three rings of eight taps at 4, 16 and 36 px, keeping only bright samples; nearer rings weigh more.
+            // Weighted neighbourhood for a soft falloff; skipped when bloom is 0 (inset).
             float3 glow = 0;
-            [unroll] for (int r = 1; r <= 3; r++)
+            [branch] if (bloom > 0.001)
             {
-                [unroll] for (int k = 0; k < 8; k++)
+                float weight = 0;
+                [unroll] for (int y = -2; y <= 2; y++)
                 {
-                    float a = k * 0.785398 + r * 0.4;
-                    float3 s = tex2D(input, uv + float2(cos(a), sin(a)) * px * (r * r * 4.0)).rgb;
-                    glow += s * saturate((dot(s, Luma) - 0.72) * 3.5) / r;
+                    [unroll] for (int x = -2; x <= 2; x++)
+                    {
+                        float w = exp(-0.5 * (x*x + y*y));
+                        float3 s = tex2D(input, uv + float2(x, y) * px * 7.0).rgb;
+                        glow += s * saturate((dot(s, Luma) - 0.78) * 4.5) * w;
+                        weight += w;
+                    }
                 }
+                glow /= weight;
             }
-            glow /= 8 * 1.8333;
             float3 col = c.rgb + glow * bloom;
             float l = dot(col, Luma);
             col = lerp(l.xxx, col, saturation);
             col = saturate((col - 0.5) * contrast + 0.5 * c.a);   // premultiplied: pivot scales with alpha
             float2 d = uv - 0.5;
             col *= 1 - vignette * dot(d, d) * 1.6;
-            return float4(col, max(c.a, saturate(dot(glow * bloom, Luma))));
+            float3 added = glow * bloom;
+            float alpha = max(c.a, saturate(max(added.r, max(added.g, added.b))));
+            return float4(min(col, alpha.xxx), alpha);
         }
         """;
 
@@ -60,7 +67,7 @@ public sealed class PostEffect : ShaderEffect
     }
 
     public static readonly DependencyProperty InputProperty = RegisterPixelShaderSamplerProperty("Input", typeof(PostEffect), 0);
-    public static readonly DependencyProperty BloomProperty = DependencyProperty.Register(nameof(Bloom), typeof(double), typeof(PostEffect), new UIPropertyMetadata(0.55, PixelShaderConstantCallback(1)));
+    public static readonly DependencyProperty BloomProperty = DependencyProperty.Register(nameof(Bloom), typeof(double), typeof(PostEffect), new UIPropertyMetadata(0.35, PixelShaderConstantCallback(1)));
     public static readonly DependencyProperty VignetteProperty = DependencyProperty.Register(nameof(Vignette), typeof(double), typeof(PostEffect), new UIPropertyMetadata(0.22, PixelShaderConstantCallback(2)));
     public static readonly DependencyProperty SaturationProperty = DependencyProperty.Register(nameof(Saturation), typeof(double), typeof(PostEffect), new UIPropertyMetadata(1.08, PixelShaderConstantCallback(3)));
     public static readonly DependencyProperty ContrastProperty = DependencyProperty.Register(nameof(Contrast), typeof(double), typeof(PostEffect), new UIPropertyMetadata(1.06, PixelShaderConstantCallback(4)));

@@ -1,4 +1,4 @@
-﻿# WPF Launch Simulation
+# WPF Launch Simulation
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -12,18 +12,18 @@
 - **Ascent**: 3-DoF point-mass flight with Earth rotation, gravity, an exponential atmosphere, sea-level/vacuum thrust, staged masses and drag. Events are raised from the dynamics: sonic, Max-Q, stage separations, ignitions, fairing separation, 3rd-stage cutoff.
 - **Separated hardware** (stages, fairing halves) falls ballistically; splashdown distances are logged next to the planned values.
 - **Telemetry**: mission clock, altitude, inertial/ground speed, Mach, sensed acceleration, dynamic pressure, downrange, flight-path angle, propellant, live perigee/apogee/inclination.
-- **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view.
-- **Onboard camera vibration**: strong at liftoff (pad acoustics) and around Max-Q/transonic (buffeting), weak while the upper stages burn in vacuum, none after engine cutoff, with short shocks at separations and ignitions. Amplitudes are illustrative.
+- **Camera direction**: automatic broadcast-style switching, or manual 3rd-person chase (drag/wheel), control room, onboard camera, pad ground camera and full-Earth view. The onboard camera looks aft along the body.
+- **Onboard camera vibration (can be turned off)**: strong at liftoff (pad acoustics) and around Max-Q/transonic (buffeting), weaker while the upper stages burn, calm after fairing release apart from short shocks at separations. Amplitudes are illustrative.
 - **Sound (synthesised, can be turned off)**: engine roar and exhaust crackle by view and phase (loud near the ground, a low rumble in vacuum, silence after cutoff; heard from the pad/control room it fades with distance), countdown beeps from T−10 s and thuds at separations. No recordings are shipped; clips are generated at first run. Muted when paused or above 5×.
 - **Fine adjustment (education)**: after separation the camera and telemetry follow the performance verification satellite. "Auto" schedules a circularisation burn at the next apoapsis; the practice buttons apply prograde/retrograde, normal/antinormal and radial burns (1/5/10 m/s) and show the orbit before (grey) and after (cyan). The 30 m/s Δv budget is an example value, not a satellite specification.
-- **Satellite after separation**: the performance verification satellite has body-mounted solar panels (no deployable wings, inferred from released photos). It separates tumbling, is de-spun (magnetorquers, then reaction wheels) to below 0.3°/s, turns its panels to the Sun, and the first beacon is received at King Sejong Station at T+41:36 (published). The sequence follows KSAS 2023 abstracts; phase timings and the tumble rate are illustrative.
+- **Satellite after separation**: the performance verification satellite has body-side solar panels. It separates tumbling, is de-spun (magnetorquers, then reaction wheels) to below 0.3°/s, turns its panels to the Sun, and the first beacon is received at King Sejong Station at T+41:36 (published). The sequence follows KSAS 2023 abstracts; phase timings and the tumble rate are illustrative.
 - **After the flight**: a closing card summarises what followed (news reports): two-way contact with the Daejeon ground station on 2022-06-22, the four university cubesats ejected on 6/29, 7/1, 7/3 and 7/5, and the end of PVSAT operations in August 2024.
 - **Mission timeline**: a bar under the 3D view with buttons for liftoff, Max-Q, separations, orbit insertion and satellite separations; a jump re-runs the deterministic flight to that moment (backward jumps restart it).
 - **Explanation cards**: short Korean explanations of liftoff, sonic, Max-Q, staging, fairing, orbit insertion and the satellite/mass-simulator separations (can be turned off).
-- **Visuals**: Nuri model with flag and "대한민국" markings, seams, raceways and bell nozzles; detailed launch complex 2 (lattice tower, service arms, deck, flame trench, lightning masts; layout illustrative); soft billboard exhaust cloud; gradient plumes; altitude sky colours, night-side city lights and an atmosphere limb glow. Sky: altitude-dependent gradient strongest near the horizon, a sun aureole, a thin cirrus sheet and fair-weather cumulus out to ~120 km (side view from below, flat tops from above; layout illustrative). Pad shadows: structures are projected along the sunlight (16:00 KST sun) and painted into the apron and deck textures with contact darkening; the vehicle casts a moving shadow until ~250 m. A cool skylight keeps the side away from the Sun darker but readable. Screen-space finish: a pixel-shader effect on the 3D layers adds bloom around bright areas, a gentle contrast/saturation curve and a vignette (HLSL compiled at start-up with the Windows d3dcompiler_47.dll; skipped if unavailable).
-- **Control room**: flight map with ground track and tracking stations (Naro, Jeju, Palau), altitude and speed charts, station elevation.
+- **Visuals**: Nuri model with flag and "대한민국" markings; launch complex 2 with tower, umbilicals, flame trench and lightning masts (layout illustrative); exhaust cloud and plumes; sky colour by altitude, a thin cirrus sheet, night-side city lights and an atmosphere glow; pad shadows from the 16:00 KST sun; optional bloom and vignette.
+- **Control room**: launch map (world map after satellite separation), altitude and speed charts, a tracking view and station elevation.
 
-Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). The source mosaic has some swath-edge streaks over the sea, and terrain is flat (no elevation). Within 3 km of the pad the same image drives a near-field terrain mesh (land/sea from the colours, procedural canopy and wave detail); its hill relief is illustrative since no elevation data is shipped. Apron concrete and building facades are procedural textures.
+Pad-area terrain: NASA GIBS Landsat WELD (2000, ~30 m) around Naro, built by `WpfLaunchSimulation/build_assets/prepare_pad_texture.py` (bounds in `Assets/naro-area.json`). Terrain is flat beyond 3 km of the pad; the hill relief near the pad is illustrative.
 
 ## Accuracy
 
@@ -53,4 +53,4 @@ dotnet run --project WpfLaunchSimulation -c Release
 
 ## License
 
-[MIT License](LICENSE) — keep the copyright notice (`Copyright (c) 2026 Song-Sungyoub`) and license text in copies or substantial portions. Earth imagery: NASA Blue Marble. Nuri flight data: public KARI releases and news reports (see the research document).
+[MIT License](LICENSE) — keep the copyright notice (`Copyright (c) 2026 Song-Sungyoub`) and license text in copies or substantial portions. Earth imagery: NASA Blue Marble Next Generation, June 2004 (credit: NASA Earth Observatory). Nuri flight data: public KARI releases and news reports (see the research document).

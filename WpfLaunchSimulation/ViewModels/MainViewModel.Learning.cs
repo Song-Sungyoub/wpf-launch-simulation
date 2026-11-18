@@ -41,8 +41,9 @@ public sealed partial class MainViewModel
         bool wasPlaying = playing; double keepSpeed = speed;
         if (t < missionTime) Reset();
         missionTime = t; playing = wasPlaying || missionTime <= CountdownStart; speed = keepSpeed;
+        displayDirty = true; // A paused jump must bypass the real-time telemetry throttle.
         LogCountdown(Math.Min(missionTime, 0)); // countdown entries first, then the replayed flight events
-        if (missionTime > 0) sim.Advance(missionTime);
+        if (missionTime > 0) AdvanceMission(missionTime);
         Notify(nameof(PlayText)); Notify(nameof(SpeedText));
     }
     public ICommand JumpCommand => jumpCommand ??= new ActionCommand(p => { if (p is TimelineMark m) JumpTo(m.Time - 3); });
@@ -67,7 +68,7 @@ public sealed partial class MainViewModel
         ("3단 엔진 종료", "궤도 진입", "수평 속도가 초속 약 7.5 km에 이르면, 떨어지는 만큼 지구 표면도 휘어져 멀어지므로 계속 지구를 돌게 됩니다. 목표는 고도 700 km 태양동기궤도(경사각 약 98°)입니다."),
         ("성능검증위성 분리", "성능검증위성 분리", "위성이 3단에서 떨어져 나와 약 99분마다 지구를 한 바퀴 돕니다. 오른쪽 '정밀 조정'에서 분사 방향에 따라 궤도가 어떻게 바뀌는지 해 볼 수 있습니다."),
         ("자세 안정화", "자세 안정화", "분리 직후 위성은 천천히 뒹굽니다. 먼저 자기토커(지구 자기장을 이용)로, 이어 자이로와 반작용휠로 회전을 초속 0.3° 이하까지 줄였습니다. 단계별 시각은 예시입니다."),
-        ("태양 지향", "태양 지향", "성능검증위성은 태양전지판을 펼치지 않고 몸체 옆면에 붙인 형태입니다. 그래서 위성 전체를 돌려 전지판이 태양을 향하게 해서 전력을 얻습니다."),
+        ("태양 지향", "태양 지향", "태양전지판이 태양을 향하도록 자세를 맞춰 전력을 확보합니다."),
         ("첫 교신", "첫 교신", "발사 41분 36초 뒤 남극 세종기지 지상국이 위성의 첫 비콘(상태 신호)을 받았습니다. 위성이 살아 있다는 첫 확인입니다."),
         ("이후 일정", "이후 일정", "다음 날(6월 22일) 새벽 대전 지상국과 첫 양방향 교신에 성공했고, 일주일 점검 뒤 큐브위성 4기를 이틀 간격으로 내보냈습니다: 조선대(6/29), KAIST(7/1), 서울대(7/3), 연세대(7/5). 성능검증위성은 약 2년 임무를 마치고 2024년 8월 운영을 종료했습니다."),
         ("위성모사체 분리", "위성모사체 분리", "위성모사체(약 1.3톤)는 실제 위성 대신 무게를 맞춘 금속 구조물로, 누리호가 목표 무게를 궤도에 올릴 수 있는지 검증하는 데 쓰였습니다."),
