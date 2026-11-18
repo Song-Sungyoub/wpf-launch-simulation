@@ -72,6 +72,30 @@ public static class SceneGeometry
         return new GeometryModel3D(mesh, material);
     }
 
+    // Latitude/longitude rectangle on the true sphere (above the globe's chords), UVs spanning the rectangle.
+    public static GeometryModel3D RegionPatch(double latMin, double latMax, double lonMin, double lonMax, double stepDeg, Material material)
+    {
+        var mesh = new MeshGeometry3D();
+        int rows = (int)Math.Ceiling((latMax - latMin) / stepDeg), cols = (int)Math.Ceiling((lonMax - lonMin) / stepDeg);
+        for (int r = 0; r <= rows; r++)
+            for (int c = 0; c <= cols; c++)
+            {
+                double lat = latMax - (latMax - latMin) * r / rows, lon = lonMin + (lonMax - lonMin) * c / cols;
+                var dir = Earth.FixedPosition(lat, lon, 0).Unit;
+                mesh.Positions.Add(Point(dir * Earth.Radius));
+                mesh.Normals.Add(Direction(dir));
+                mesh.TextureCoordinates.Add(new Point((double)c / cols, (double)r / rows));
+            }
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                int a = r * (cols + 1) + c, b = a + cols + 1;
+                foreach (int index in new[] { a, b, a + 1, a + 1, b, b + 1 }) mesh.TriangleIndices.Add(index);
+            }
+        mesh.Freeze();
+        return new GeometryModel3D(mesh, material);
+    }
+
     public static GeometryModel3D Clouds()
     {
         const int width = 2048, height = 1024;

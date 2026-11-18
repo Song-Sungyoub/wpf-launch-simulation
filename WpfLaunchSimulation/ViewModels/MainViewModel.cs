@@ -126,11 +126,22 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         var earthMaterial = new DiffuseMaterial(new ImageBrush(earthImage)); earthMaterial.Freeze();
         farEarthFixed.Transform = new RotateTransform3D(earthAngle);
         farEarthFixed.Children.Add(SceneGeometry.Sphere(1, earthMaterial, 160, 80));
+        // Flight region (0–45°N, 105–150°E) at ~1.2 km per pixel from build_assets/prepare_region_texture.py,
+        // fading out over its outer 2° so it blends into the globe.
+        var regionImage = new BitmapImage();
+        regionImage.BeginInit(); regionImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/flight-region.jpg"); regionImage.EndInit(); regionImage.Freeze();
+        var regionMaterial = new DiffuseMaterial(new ImageBrush(Faded(regionImage, (u, v) => Math.Min(Math.Min(u, 1 - u), Math.Min(v, 1 - v)) * 45 / 2))) { };
+        ((ImageBrush)regionMaterial.Brush).ViewportUnits = BrushMappingMode.Absolute; ((ImageBrush)regionMaterial.Brush).Viewport = new Rect(0, 0, 1, 1);
+        regionMaterial.Freeze();
+        farEarthFixed.Children.Add(SceneGeometry.RegionPatch(0, 45, 105, 150, 0.25, regionMaterial));
         // Pad area: NASA GIBS Landsat WELD (2000, ~30 m) resampled by build_assets/prepare_pad_texture.py.
         // Brushes map UVs relative to the mesh's own UV range by default; use absolute 0..1 texture space.
         var areaImage = new BitmapImage();
         areaImage.BeginInit(); areaImage.UriSource = new Uri("pack://application:,,,/WpfLaunchSimulation;component/Assets/naro-area.jpg"); areaImage.EndInit(); areaImage.Freeze();
-        var patchMaterial = new DiffuseMaterial(new ImageBrush(FeatheredPatch(areaImage, 45, 78)) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
+        const double kmPerDeg = Math.PI * Earth.Radius / 180 / 1000, innerKm = 45, outerKm = 78;
+        double kmX = 1.8 * kmPerDeg * Math.Cos(NuriFlight2.PadLatitude * Math.PI / 180), kmY = 1.5 * kmPerDeg;
+        var padFade = Faded(areaImage, (u, v) => (outerKm - Math.Sqrt(Math.Pow((u - 0.5) * kmX, 2) + Math.Pow((v - 0.5) * kmY, 2))) / (outerKm - innerKm));
+        var patchMaterial = new DiffuseMaterial(new ImageBrush(padFade) { ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(0, 0, 1, 1) }); patchMaterial.Freeze();
         // Stored pad-relative so float rounding does not make the ground shimmer.
         padFrame = LocalFrame(Earth.FixedPosition(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, NuriFlight2.PadAltitudeM));
         farEarthFixed.Children.Add(Localize(SceneGeometry.GroundPatch(NuriFlight2.PadLatitude, NuriFlight2.PadLongitude, 80, patchMaterial,
@@ -349,23 +360,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         double s = scale / R; var p = SceneGeometry.Point(position);
         return new Matrix3D(x.X * s, x.Y * s, x.Z * s, 0, y.X * s, y.Y * s, y.Z * s, 0, z.X * s, z.Y * s, z.Z * s, 0, p.X, p.Y, p.Z, 1);
     }
-    // Pad-area image with alpha fading out between innerKm and outerKm, so the patch blends into the globe.
-    // Image bounds: Assets/naro-area.json.
-    private static BitmapSource FeatheredPatch(BitmapSource source, double innerKm, double outerKm)
+    // Copy of an image with alpha from opacity(u, v) (clamped to 0..1, smoothed), so a patch blends into the globe.
+    private static BitmapSource Faded(BitmapSource source, Func<double, double, double> opacity)
     {
         var bgra = new FormatConvertedBitmap(source, PixelFormats.Pbgra32, null, 0);
         int w = bgra.PixelWidth, h = bgra.PixelHeight;
         var pixels = new byte[w * h * 4];
         bgra.CopyPixels(pixels, w * 4, 0);
-        const double kmPerDeg = Math.PI * Earth.Radius / 180 / 1000;
-        double kmX = 1.8 * kmPerDeg * Math.Cos(NuriFlight2.PadLatitude * Math.PI / 180) / w, kmY = 1.5 * kmPerDeg / h;
         for (int y = 0; y < h; y++)
         {
-            double dy = (y + 0.5 - h / 2.0) * kmY;
+            double v = (y + 0.5) / h;
             for (int x = 0; x < w; x++)
             {
-                double dx = (x + 0.5 - w / 2.0) * kmX;
-                double f = Math.Clamp((outerKm - Math.Sqrt(dx * dx + dy * dy)) / (outerKm - innerKm), 0, 1);
+                double f = Math.Clamp(opacity((x + 0.5) / w, v), 0, 1);
                 if (f >= 1) continue;
                 f = f * f * (3 - 2 * f);
                 int i = (y * w + x) * 4;

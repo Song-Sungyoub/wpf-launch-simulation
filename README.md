@@ -53,4 +53,4 @@ dotnet run --project WpfLaunchSimulation -c Release
 
 ## License
 
-[MIT License](LICENSE) — keep the copyright notice (`Copyright (c) 2026 Song-Sungyoub`) and license text in copies or substantial portions. Earth imagery: NASA Blue Marble Next Generation, June 2004 (credit: NASA Earth Observatory). Nuri flight data: public KARI releases and news reports (see the research document).
+[MIT License](LICENSE) — keep the copyright notice (`Copyright (c) 2026 Song-Sungyoub`) and license text in copies or substantial portions. Earth imagery: NASA Blue Marble Next Generation, June 2004 (credit: NASA Earth Observatory); the flight region (0–45°N, 105–150°E) uses its 500 m tile at ~1.2 km per pixel, built by `WpfLaunchSimulation/build_assets/prepare_region_texture.py`. Nuri flight data: public KARI releases and news reports (see the research document).

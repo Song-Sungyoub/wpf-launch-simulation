@@ -1,0 +1,9 @@
+{
+  "source": "NASA Blue Marble Next Generation, June 2004, topography and bathymetry, tile D1 (NASA Earth Observatory)",
+  "projection": "equirectangular",
+  "latMin": 0.0,
+  "latMax": 45.0,
+  "lonMin": 105.0,
+  "lonMax": 150.0,
+  "size": 4096
+}
