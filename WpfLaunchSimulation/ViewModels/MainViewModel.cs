@@ -23,7 +23,7 @@ public sealed class ActionCommand(Action<object?> execute) : ICommand
 
 public sealed partial class MainViewModel : INotifyPropertyChanged
 {
-    public const double CountdownStart = -600; // PLO starts at T−10 min (YTN 사이언스, 2022-06-21)
+    public const double CountdownStart = -60; // playback starts at T−1 min; PLO itself starts at T−10 min (YTN 사이언스, 2022-06-21)
     private const double R = Earth.Radius;
 
     // Scenes: stars (camera at the origin), the far layer (Earth, paths) and the near layer (pad, rocket, debris).

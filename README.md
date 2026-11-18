@@ -8,7 +8,7 @@
 
 ## What it shows
 
-- **Countdown** from the automatic launch sequence (PLO, T−10 min) to ignition at T−4 s and liftoff.
+- **Countdown** from T−1 min (the automatic launch sequence, PLO, starts at T−10 min) to ignition at T−4 s and liftoff.
 - **Ascent**: 3-DoF point-mass flight with Earth rotation, gravity, an exponential atmosphere, sea-level/vacuum thrust, staged masses and drag. Events are raised from the dynamics: sonic, Max-Q, stage separations, ignitions, fairing separation, 3rd-stage cutoff.
 - **Separated hardware** (stages, fairing halves) falls ballistically; splashdown distances are logged next to the planned values.
 - **Telemetry**: mission clock, altitude, inertial/ground speed, Mach, sensed acceleration, dynamic pressure, downrange, flight-path angle, propellant, live perigee/apogee/inclination.
