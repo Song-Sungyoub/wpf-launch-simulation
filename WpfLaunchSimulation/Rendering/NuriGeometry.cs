@@ -24,6 +24,8 @@ public sealed partial class NuriModel
 
     private readonly Dictionary<MeshGeometry3D, Point3D[]> plumeVertices = [];
     private readonly double[] plumeExpansion = [double.NaN, double.NaN, double.NaN];
+    // Per flame: its own scale, a noise seed and how strongly it flickers (outer envelope more than the core).
+    private readonly List<(ScaleTransform3D Scale, double Seed, double Amount)>[] plumeFlicker = [[], [], []];
 
     private static readonly Material White = Lit(Color.FromRgb(232, 235, 238));
     private static readonly Material Grey = Lit(Color.FromRgb(70, 74, 82));
@@ -66,20 +68,34 @@ public sealed partial class NuriModel
         double[] plumeRadius = [1.6, 0.8, 0.35];
         for (int i = 0; i < 3; i++)
         {
-            // Hot white core and a longer orange envelope, both fading to transparent toward the tail.
-            var exits = i == 0 ? new[] { (X: -0.8, Z: -0.8), (X: -0.8, Z: 0.8), (X: 0.8, Z: -0.8), (X: 0.8, Z: 0.8) } : new[] { (X: 0.0, Z: 0.0) };
-            foreach (var exit in exits)
+            // Shapes after KARI launch photos. Stage 1 in air: white-hot cores at the four nozzles inside one merged,
+            // slightly bulging yellow-orange column with a soft outer glow. Upper stages in vacuum: a short bright core
+            // and a wide translucent fan that spreads right away. Lengths are relative (Plumes[i].ScaleY sets metres).
+            var parts = new List<(GeometryModel3D Model, double X, double Z, double Flicker)>();
+            if (i == 0)
             {
-                double radius = i == 0 ? 0.52 : plumeRadius[i];
-                var core = PlumeCone(radius, radius * 0.35, 1.0, Glow(Color.FromArgb(170, 255, 194, 100), Color.FromArgb(90, 255, 140, 50), Color.FromArgb(0, 255, 110, 40)));
-                var inner = PlumeCone(radius * 0.65, radius * 0.10, 0.6, Glow(Color.FromArgb(250, 255, 253, 238), Color.FromArgb(195, 255, 231, 171), Color.FromArgb(0, 255, 220, 140)));
-                foreach (var part in new[] { inner, core })
-                {
-                    var mesh = ((MeshGeometry3D)part.Geometry).Clone();
-                    part.Geometry = mesh; plumeVertices[mesh] = mesh.Positions.ToArray();
-                    part.Transform = new TranslateTransform3D(exit.X, 0, exit.Z);
-                    PlumeModels[i].Children.Add(part);
-                }
+                foreach (var (x, z) in new[] { (-0.8, -0.8), (-0.8, 0.8), (0.8, -0.8), (0.8, 0.8) })
+                    parts.Add((Plume(v => 0.5 * (1 - 0.55 * v), 0.22, Flame(255, 255, 250, 235, 255, 236, 170)), x, z, 0.05));
+                parts.Add((Plume(v => 1.55 + 0.45 * Math.Sin(Math.PI * Math.Min(v / 0.6, 1)) - 0.25 * v, 1.0, Flame(240, 255, 238, 190, 255, 176, 70)), 0, 0, 0.06));
+                parts.Add((Plume(v => 2.0 + 0.6 * Math.Sin(Math.PI * Math.Min(v / 0.7, 1)), 1.15, Flame(90, 255, 214, 150, 255, 150, 70)), 0, 0, 0.08));
+            }
+            else
+            {
+                double r0 = plumeRadius[i] * 0.85;
+                parts.Add((Plume(v => r0 * 0.8 * (1 - 0.6 * v), 0.18, Flame(255, 255, 250, 235, 255, 230, 170)), 0, 0, 0.04));
+                // Against black space the background needs no covering; covering would only hide the stars.
+                // One shell only: WPF writes depth for transparent pixels, so a nested shell would cut a ring out of the other.
+                parts.Add((Plume(v => r0 * (1 + 4 * Math.Sqrt(v)), 1.0, Flame(130, 255, 240, 210, 255, 165, 90, fadeAt: 0.22, cover: false)), 0, 0, 0.06));
+            }
+            foreach (var (part, x, z, flicker) in parts)
+            {
+                var mesh = (MeshGeometry3D)part.Geometry; plumeVertices[mesh] = mesh.Positions.ToArray();
+                var scale = new ScaleTransform3D();
+                var transform = new Transform3DGroup();
+                transform.Children.Add(scale); transform.Children.Add(new TranslateTransform3D(x, 0, z));
+                part.Transform = transform;
+                plumeFlicker[i].Add((scale, 17.3 * PlumeModels[i].Children.Count + 5.1 * i, flicker));
+                PlumeModels[i].Children.Add(part);
             }
             // Scale Y = plume length; translated to the nozzle exit.
             var transforms = new Transform3DGroup();
@@ -89,9 +105,31 @@ public sealed partial class NuriModel
         foreach (var part in new Model3D[] { Stage1, Stage2, Stage3, MassSimulator, Payload, FairingLeft, FairingRight }) Root.Children.Add(part);
     }
 
+    // Irregular flicker: each flame stretches by its own two-octave noise (~7 and ~17 Hz), so neither period nor
+    // amplitude repeats and the four first-stage flames do not pulse together. A function of mission time only.
+    public void FlickerPlume(int stage, double t)
+    {
+        foreach (var (scale, seed, amount) in plumeFlicker[stage])
+        {
+            double n = 0.65 * Noise(t * 7 + seed) + 0.35 * Noise(t * 17 + seed * 1.7);
+            double w = Noise(t * 5 + seed * 2.3);
+            scale.ScaleY = 1 + amount * n;
+            scale.ScaleX = scale.ScaleZ = 1 + 0.3 * amount * w;
+        }
+    }
+
+    // Smooth value noise in -1..1.
+    private static double Noise(double x)
+    {
+        double i = Math.Floor(x), f = x - i; f = f * f * (3 - 2 * f);
+        static double Hash(double k) { double s = Math.Sin(k * 127.1 + 311.7) * 43758.5453; return 2 * (s - Math.Floor(s)) - 1; }
+        return Hash(i) * (1 - f) + Hash(i + 1) * f;
+    }
+
     // Keep nozzle width fixed while the downstream plume expands in thinner air.
     public void ExpandPlume(int stage, double expansion)
     {
+        if (stage > 0) return;   // upper-stage vacuum fans are built already spread
         if (Math.Abs(plumeExpansion[stage] - expansion) < 0.002) return;
         plumeExpansion[stage] = expansion;
         foreach (GeometryModel3D part in PlumeModels[stage].Children)
@@ -163,6 +201,47 @@ public sealed partial class NuriModel
         material.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromArgb(0, 0, 0, 0))));
         material.Children.Add(new EmissiveMaterial(gradient));
         material.Freeze(); return material;
+    }
+
+    // Flame colour along the plume: from (r0, g0, b0) at the nozzle to (r1, g1, b1), fully transparent at the tail.
+    // Emissive light adds to the background (orange over a blue sky turns pale), so a black layer with the same
+    // opacity first covers the background and the flame keeps its own colour.
+    private static Material Flame(byte alpha, byte r0, byte g0, byte b0, byte r1, byte g1, byte b1, double fadeAt = 0.5, bool cover = true)
+    {
+        GradientStopCollection Stops(Func<byte, Color> color) => new([
+            new(color(alpha), 0), new(color((byte)(alpha * 0.85)), fadeAt * 0.4), new(color((byte)(alpha * 0.45)), fadeAt), new(color(0), 1)]);
+        Color Mix(byte a, double f) => Color.FromArgb(a, (byte)(r0 + (r1 - r0) * f), (byte)(g0 + (g1 - g0) * f), (byte)(b0 + (b1 - b0) * f));
+        var colour = new LinearGradientBrush(new GradientStopCollection([
+            new(Mix(alpha, 0), 0), new(Mix((byte)(alpha * 0.85), 0.5), fadeAt * 0.4), new(Mix((byte)(alpha * 0.45), 1), fadeAt), new(Mix(0, 1), 1)]),
+            new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+        var coverBrush = new LinearGradientBrush(Stops(a => Color.FromArgb(a, 0, 0, 0)), new System.Windows.Point(0, 0), new System.Windows.Point(0, 1));
+        var material = new MaterialGroup();
+        if (cover) material.Children.Add(new DiffuseMaterial(coverBrush));
+        material.Children.Add(new EmissiveMaterial(colour));
+        material.Freeze(); return material;
+    }
+
+    // Surface of revolution from y = 0 (nozzle exit, v = 0) down to y = -length (v = 1), double-sided; radius(v) in metres.
+    private static GeometryModel3D Plume(Func<double, double> radius, double length, Material material, int rings = 16, int segments = 32)
+    {
+        var mesh = new MeshGeometry3D();
+        for (int ring = 0; ring <= rings; ring++)
+        {
+            double v = (double)ring / rings, r = radius(v);
+            for (int i = 0; i <= segments; i++)
+            {
+                double a = 2 * Math.PI * i / segments;
+                mesh.Positions.Add(new Point3D(r * Math.Cos(a), -length * v, r * Math.Sin(a)));
+                mesh.TextureCoordinates.Add(new System.Windows.Point((double)i / segments, v));
+            }
+        }
+        for (int ring = 0; ring < rings; ring++)
+            for (int i = 0; i < segments; i++)
+            {
+                int a = ring * (segments + 1) + i, b = a + segments + 1;
+                foreach (int k in new[] { a, b, a + 1, a + 1, b, b + 1 }) mesh.TriangleIndices.Add(k);
+            }
+        return new GeometryModel3D(mesh, material) { BackMaterial = material };
     }
 
     // Open cone from y = 0 (nozzle exit, v = 0) down to y = -length (v = 1), double-sided.

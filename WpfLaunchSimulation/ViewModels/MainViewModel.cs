@@ -250,6 +250,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             Update(wallSeconds); renderedTime = missionTime; displayDirty = false;
         }
         UpdateCard();
+        UpdateKeepAwake();
     }
 
     private readonly HashSet<double> countdownLogged = [];
@@ -282,7 +283,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         else
         {
             position = sim.Position;
-            axis = sim.EngineBurning || sim.Time < NuriFlight2.PitchKickStart ? sim.ThrustDirection : sim.Velocity.Unit;
+            axis = sim.DisplayAxis;
         }
         rocketBase = position; rocketAxis = axis;
         rocketWorld = Pose(position, axis, 1.0);
@@ -298,11 +299,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             SetPart(rocket.PlumeModels[i], i == burning);
             if (i != burning) continue;
             double h = t > 0 ? sim.Altitude : 0, expand = 1 + 5 * (1 - Math.Pow(Earth.PressureRatio(h), 0.35));
-            double length = i switch { 0 => t <= 0 ? 6 + (t + 4) * 4 : 22 + h / 2500, 1 => 26, _ => 12 } * (0.92 + 0.08 * Math.Sin(t * 37));
+            double length = i switch { 0 => t <= 0 ? 6 + (t + 4) * 4 : 22 + h / 2500, 1 => 26, _ => 12 };
             // Near the pad the exhaust goes down the flame duct (drawn by LaunchSmoke); never draw it through the deck.
             if (i == 0) length = Math.Min(length, Math.Max(h - NuriFlight2.PadAltitudeM - 2.0, 0));
             if (length < 0.5) { SetPart(rocket.PlumeModels[i], false); continue; }
-            rocket.ExpandPlume(i, expand); rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = 1; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
+            rocket.ExpandPlume(i, expand); rocket.FlickerPlume(i, t); rocket.Plumes[i].ScaleX = rocket.Plumes[i].ScaleZ = 1; rocket.Plumes[i].ScaleY = Math.Min(length, 90);
         }
     }
     private Vec rocketBase, rocketAxis;

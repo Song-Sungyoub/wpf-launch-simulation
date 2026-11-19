@@ -42,6 +42,10 @@ public sealed class AscentSimulator
     public Vec Position { get; private set; }
     public Vec Velocity { get; private set; }
     public Vec ThrustDirection { get; private set; }
+    // Attitude for display: follows the thrust direction (velocity while coasting) with a ~1 s lag, so guidance mode
+    // switches such as the end of the pitch kick do not snap the vehicle. Physics uses ThrustDirection unchanged.
+    public Vec DisplayAxis { get; private set; }
+    private const double DisplayAxisTau = 1.0;
     public double Mass { get; private set; }
     public double Propellant { get; private set; }
     public int Stage { get; private set; } = 1;
@@ -79,7 +83,7 @@ public sealed class AscentSimulator
         kickHeading = north * Math.Cos(az) + east * Math.Sin(az);
         double beta = Math.PI - Math.Asin(Math.Cos(NuriFlight2.TargetInclinationDeg * Math.PI / 180) / Math.Cos(lat));
         planeNormal = Vec.Cross(Position, north * Math.Cos(beta) + east * Math.Sin(beta)).Unit;
-        ThrustDirection = up;
+        ThrustDirection = DisplayAxis = up;
         Mass = Total(NuriFlight2.Stage1) + Total(NuriFlight2.Stage2) + Total(NuriFlight2.Stage3) + NuriFlight2.FairingKg + NuriFlight2.PayloadKg;
         Propellant = NuriFlight2.Stage1.PropellantKg;
     }
@@ -113,6 +117,8 @@ public sealed class AscentSimulator
         if (t >= NuriFlight2.PitchKickStart)
             d = (d - planeNormal * (Vec.Dot(d, planeNormal) + Vec.Dot(Velocity, planeNormal) / PlaneTau / Math.Max(accel, 1e-3))).Unit;
         ThrustDirection = d;
+        var target = thrusting || t < NuriFlight2.PitchKickStart ? d : Velocity.Unit;
+        DisplayAxis = t < NuriFlight2.PitchKickStart ? d : (DisplayAxis + (target - DisplayAxis) * (Step / DisplayAxisTau)).Unit;
 
         double r = Position.Length;
         var gravity = Position * (-Earth.Mu / (r * r * r));
