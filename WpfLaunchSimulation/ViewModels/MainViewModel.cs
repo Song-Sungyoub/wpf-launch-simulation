@@ -203,7 +203,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         StartCommand = new ActionCommand(() => { playing = !playing; displayDirty = true; Notify(nameof(PlayText)); });
         SkipCountdownCommand = new ActionCommand(() => { if (missionTime < -15) missionTime = -15; });
         ResetCommand = new ActionCommand(Reset);
-        SpeedCommand = new ActionCommand(p => { if (double.TryParse(p as string, out var v)) { speed = v; Notify(nameof(SpeedText)); } });
+        SpeedCommand = new ActionCommand(p => { if (double.TryParse(p as string, out var v)) { speed = v; autoSpeed = false; Notify(nameof(SpeedText)); } });
         CameraCommand = new ActionCommand(p => { if (Enum.TryParse<CameraMode>(p as string, out var m)) { cameraMode = m; displayDirty = true; Notify(nameof(CameraText)); } });
         sim.EventRaised += OnFlightEvent;
         InitializeManeuvers();
@@ -217,13 +217,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     public ICommand SpeedCommand { get; }
     public ICommand CameraCommand { get; }
     public string PlayText => playing ? "일시정지" : missionTime <= CountdownStart ? "카운트다운 시작" : "계속";
-    public string SpeedText => $"{speed:0}×";
+    public string SpeedText => autoSpeed && speed > 1 ? $"{speed:0}× (조용한 구간 자동)" : $"{speed:0}×";
 
     private void Reset()
     {
         sim.EventRaised -= OnFlightEvent;
         sim = new AscentSimulator(); sim.EventRaised += OnFlightEvent;
-        missionTime = CountdownStart; playing = false; speed = 1; displayDirty = true;
+        missionTime = CountdownStart; playing = false; speed = 1; autoSpeed = true; displayDirty = true;
         rocket.Root.Children.Clear();
         foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.MassSimulator, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
         satelliteModel = null; ResetSatellitePhases();
@@ -243,6 +243,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         double dt = double.IsNaN(lastWall) ? 0 : Math.Clamp(wallSeconds - lastWall, 0, 0.1);
         lastWall = wallSeconds;
+        UpdateAutoSpeed();
         if (playing && missionTime < NuriFlight2.FlightEnd + 3 * 3600) missionTime += dt * speed;
         if (missionTime > 0) AdvanceMission(missionTime);
         if (displayDirty || missionTime != renderedTime)
