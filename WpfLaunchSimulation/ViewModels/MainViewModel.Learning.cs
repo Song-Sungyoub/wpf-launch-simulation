@@ -41,6 +41,7 @@ public sealed partial class MainViewModel
         bool wasPlaying = playing; double keepSpeed = speed;
         if (t < missionTime) Reset();
         missionTime = t; playing = wasPlaying || missionTime <= CountdownStart; speed = keepSpeed;
+        cardsFrom = t; HideCard();   // events the jump skips past are logged but get no card
         displayDirty = true; // A paused jump must bypass the real-time telemetry throttle.
         LogCountdown(Math.Min(missionTime, 0)); // countdown entries first, then the replayed flight events
         if (missionTime > 0) AdvanceMission(missionTime);
@@ -56,6 +57,7 @@ public sealed partial class MainViewModel
     public string CardText { get; private set; } = "";
     public Visibility CardVisibility { get; private set; } = Visibility.Collapsed;
     private double cardUntil = double.NegativeInfinity;
+    private double cardsFrom = double.NegativeInfinity;   // mission time of the last jump
 
     private static readonly (string Prefix, string Title, string Text)[] Cards =
     [
@@ -74,9 +76,9 @@ public sealed partial class MainViewModel
         ("위성모사체 분리", "위성모사체 분리", "위성모사체(약 1.3톤)는 실제 위성 대신 무게를 맞춘 금속 구조물로, 누리호가 목표 무게를 궤도에 올릴 수 있는지 검증하는 데 쓰였습니다."),
     ];
 
-    private void ShowCardFor(string eventName)
+    private void ShowCardFor(string eventName, double eventTime)
     {
-        if (!showCards) return;
+        if (!showCards || eventTime < cardsFrom) return;
         var card = Cards.FirstOrDefault(c => eventName.StartsWith(c.Prefix));
         if (card.Title is null) return;
         CardTitle = card.Title; CardText = card.Text; CardVisibility = Visibility.Visible;

@@ -223,7 +223,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     {
         sim.EventRaised -= OnFlightEvent;
         sim = new AscentSimulator(); sim.EventRaised += OnFlightEvent;
-        missionTime = CountdownStart; playing = false; speed = 1; autoSpeed = true; displayDirty = true;
+        missionTime = CountdownStart; playing = false; speed = 1; autoSpeed = true; cardsFrom = double.NegativeInfinity; displayDirty = true;
         rocket.Root.Children.Clear();
         foreach (var part in new Model3D[] { rocket.Stage1, rocket.Stage2, rocket.Stage3, rocket.MassSimulator, rocket.Payload, rocket.FairingLeft, rocket.FairingRight }) rocket.Root.Children.Add(part);
         satelliteModel = null; ResetSatellitePhases();
@@ -258,7 +258,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private void LogCountdown(double t)
     {
         foreach (var (time, text) in new[] { (-600.0, "발사자동운용(PLO) 시작 · 추진제 충전과 기립장치 철수는 완료된 상태 · 이후 이상 감지 시 자동 중단"), (-4.0, "1단 엔진 4기 점화"), (0.0, "이륙 · 지상고정장치 해제") })
-            if (t >= time && countdownLogged.Add(time)) { AddLog(time, text); if (time == 0) ShowCardFor("이륙"); }
+            if (t >= time && countdownLogged.Add(time)) { AddLog(time, text); if (time == 0) ShowCardFor("이륙", time); }
     }
     private void Update(double wall)
     {
@@ -785,7 +785,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         string compare = reference.Event is null ? "" : $" (실제 {reference.Time:0} s / {reference.AltitudeKm:0} km)";
         AddLog(e.Time, $"{e.Name} · {e.AltitudeKm:0.0} km, {e.SpeedKms:0.00} km/s{compare}");
         LatestEvent = e.Name; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
-        ShowCardFor(e.Name);
+        ShowCardFor(e.Name, e.Time);
     }
 
     // Newest first, ordered by mission time (a jump replays many events in one frame, out of order).

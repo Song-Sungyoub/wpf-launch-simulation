@@ -85,7 +85,7 @@ public sealed partial class MainViewModel
             attitudeLogged[i] = true;
             AddLog(phases[i].Time, phases[i].Text + (i < 3 ? " [시각은 예시]" : ""));
             LatestEvent = phases[i].Text.Split(" · ")[0]; Notify(nameof(LatestEvent)); Notify(nameof(LatestEventVisibility));
-            if (phases[i].Card is { } card) ShowCardFor(card);
+            if (phases[i].Card is { } card) ShowCardFor(card, phases[i].Time);
         }
     }
     private void ResetSatellitePhases() => attitudeLogged = new bool[5];
