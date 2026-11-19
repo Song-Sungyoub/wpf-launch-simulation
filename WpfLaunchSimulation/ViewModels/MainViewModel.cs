@@ -469,8 +469,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
         if (t < 262) return CameraMode.Chase;
         if (t < 286) return CameraMode.Onboard;   // stage-2 separation ≈ 270 s
         if (t < 420) return CameraMode.Chase;
-        if (t < 770) return CameraMode.ControlRoom;
+        // Long stage-3 burn: break the control room up with the onboard view of the Earth below.
+        if (t < 540) return CameraMode.ControlRoom;
+        if (t < 610) return CameraMode.Onboard;
+        if (t < 720) return CameraMode.ControlRoom;
         if (t < 990) return CameraMode.Chase;      // cutoff ≈ 791 s, separations 875 / 945 s
+        // Satellite attitude events: close on the satellite while they play at 1× (see AutoSpeed); otherwise the globe.
+        foreach (var mark in TimelineMarks)
+            if (mark.Time > QuietFrom && mark.Time < FirstBeacon && t >= mark.Time - EventLead && t <= mark.Time + EventTail)
+                return CameraMode.Chase;
         return CameraMode.Globe;
     }
 
