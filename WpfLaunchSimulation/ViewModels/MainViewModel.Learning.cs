@@ -53,6 +53,10 @@ public sealed partial class MainViewModel
     // ---- Explanation cards -------------------------------------------------------------------------------
     private bool showCards = true;
     public bool ShowCards { get => showCards; set { showCards = value; if (!value) HideCard(); Notify(); } }
+    // The mission clock and telemetry panel over the 3D view.
+    private bool showTelemetry = true;
+    public bool ShowTelemetry { get => showTelemetry; set { showTelemetry = value; Notify(); Notify(nameof(TelemetryVisibility)); } }
+    public Visibility TelemetryVisibility => showTelemetry ? Visibility.Visible : Visibility.Collapsed;
     public string CardTitle { get; private set; } = "";
     public string CardText { get; private set; } = "";
     public Visibility CardVisibility { get; private set; } = Visibility.Collapsed;

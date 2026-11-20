@@ -54,7 +54,7 @@
                 <!-- Each column scales down independently; panels cannot overlap on a narrow viewport. -->
                 <Grid VerticalAlignment="Top" IsHitTestVisible="False" Visibility="{Binding SceneVisibility}">
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top" Visibility="{Binding TelemetryVisibility}">
                 <Border Style="{StaticResource Panel}" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Width="330">
                     <StackPanel>
                         <TextBlock Text="{Binding MissionClock}" FontFamily="Consolas" FontSize="30" FontWeight="Bold" Foreground="#FFD35A"/>
@@ -241,6 +241,7 @@
                         </WrapPanel>
                         <TextBlock Text="3인칭: 드래그로 회전, 휠로 거리 조절" FontSize="10" Foreground="#899BB5"/>
                         <CheckBox Content="설명 카드 표시" IsChecked="{Binding ShowCards}" Foreground="#E7EEF8" Margin="0,8,0,0"/>
+                        <CheckBox Content="비행 정보 표시" IsChecked="{Binding ShowTelemetry}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
                         <CheckBox Content="화면 효과 (빛 번짐)" IsChecked="{Binding PostProcessingOn}" Foreground="#E7EEF8" Margin="0,4,0,0"/>
                         <TextBlock Text="빛 번짐 강도" Style="{StaticResource Label}"/>
                         <Slider Minimum="0" Maximum="1" Value="{Binding BloomStrength}" IsEnabled="{Binding PostProcessingOn}"/>
